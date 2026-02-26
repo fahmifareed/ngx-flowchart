@@ -1,0 +1,44 @@
+:host {
+  position: absolute;
+  z-index: 0;
+  box-sizing: border-box;
+  display: block;
+  cursor: move;
+  user-select: none;
+
+  &.fc-dragging {
+    z-index: 5;
+    opacity: 0.85;
+  }
+}
+
+.fc-note-resize-handle {
+  position: absolute;
+  z-index: 10;
+}
+
+.fc-note-resize-se {
+  bottom: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: se-resize;
+}
+
+.fc-note-resize-s {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 8px;
+  cursor: s-resize;
+}
+
+.fc-note-resize-e {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 40px;
+  cursor: e-resize;
+}

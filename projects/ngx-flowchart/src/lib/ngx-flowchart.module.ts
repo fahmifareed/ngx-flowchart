@@ -6,15 +6,21 @@ import { CommonModule } from '@angular/common';
 import { FcMagnetDirective } from './magnet.directive';
 import { FcConnectorDirective } from './connector.directive';
 import { FcNodeContainerComponent } from './node.component';
-import { FC_NODE_COMPONENT_CONFIG } from './ngx-flowchart.models';
+import { FcNoteContainerComponent } from './note.component';
+import { FC_NODE_COMPONENT_CONFIG, FC_NOTE_COMPONENT_CONFIG } from './ngx-flowchart.models';
 import { DefaultFcNodeComponent } from './default-node.component';
+import { DefaultFcNoteComponent } from './default-note.component';
 
 @NgModule({
-    declarations: [NgxFlowchartComponent,
+    declarations: [
+        NgxFlowchartComponent,
         FcMagnetDirective,
         FcConnectorDirective,
         FcNodeContainerComponent,
-        DefaultFcNodeComponent],
+        DefaultFcNodeComponent,
+        FcNoteContainerComponent,
+        DefaultFcNoteComponent
+    ],
     providers: [
         FcModelValidationService,
         FcEdgeDrawingService,
@@ -23,14 +29,24 @@ import { DefaultFcNodeComponent } from './default-node.component';
             useValue: {
                 nodeComponentType: DefaultFcNodeComponent
             }
+        },
+        {
+            provide: FC_NOTE_COMPONENT_CONFIG,
+            useValue: {
+                noteComponentType: DefaultFcNoteComponent
+            }
         }
     ],
     imports: [
         CommonModule
     ],
-    exports: [NgxFlowchartComponent,
+    exports: [
+        NgxFlowchartComponent,
         FcMagnetDirective,
         FcConnectorDirective,
-        DefaultFcNodeComponent]
+        DefaultFcNodeComponent,
+        FcNoteContainerComponent,
+        DefaultFcNoteComponent
+    ]
 })
 export class NgxFlowchartModule { }

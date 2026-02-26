@@ -6,6 +6,7 @@ import { coerceBooleanProperty } from '@angular/cdk/coercion';
 import { CommonModule } from '@angular/common';
 
 const FC_NODE_COMPONENT_CONFIG = new InjectionToken('fc-node.component.config');
+const FC_NOTE_COMPONENT_CONFIG = new InjectionToken('fc-note.component.config');
 const htmlPrefix = 'fc';
 const leftConnectorType = 'leftConnector';
 const rightConnectorType = 'rightConnector';
@@ -32,7 +33,8 @@ const FlowchartConstants = {
     leftConnectorClass: htmlPrefix + '-' + leftConnectorType + 's',
     rightConnectorClass: htmlPrefix + '-' + rightConnectorType + 's',
     canvasResizeThreshold: 200,
-    canvasResizeStep: 200
+    canvasResizeStep: 200,
+    noteClass: htmlPrefix + '-note'
 };
 class BaseError {
     constructor(...args) {
@@ -302,8 +304,45 @@ class EdgesModel extends AbstractFcModel {
         });
     }
 }
+class NotesModel extends AbstractFcModel {
+    constructor(modelService) {
+        super(modelService);
+    }
+    delete(note) {
+        if (this.isSelected(note)) {
+            this.deselect(note);
+        }
+        const model = this.modelService.model;
+        if (!model.notes) {
+            return;
+        }
+        const index = model.notes.indexOf(note);
+        if (index === -1) {
+            throw new Error('Tried to delete not existing note');
+        }
+        model.notes.splice(index, 1);
+        this.modelService.notifyModelChanged();
+        this.modelService.noteRemovedCallback(note);
+    }
+    getSelectedNotes() {
+        const model = this.modelService.model;
+        if (!model.notes) {
+            return [];
+        }
+        return model.notes.filter((note) => this.isSelected(note));
+    }
+    handleClicked(note, ctrlKey) {
+        if (ctrlKey) {
+            this.toggleSelected(note);
+        }
+        else {
+            this.modelService.deselectAll();
+            this.select(note);
+        }
+    }
+}
 class FcModelService {
-    constructor(modelValidation, model, modelChanged, detectChangesSubject, selectedObjects, dropNode, createEdge, edgeAddedCallback, nodeRemovedCallback, edgeRemovedCallback, canvasHtmlElement, svgHtmlElement) {
+    constructor(modelValidation, model, modelChanged, detectChangesSubject, selectedObjects, dropNode, createEdge, edgeAddedCallback, nodeRemovedCallback, edgeRemovedCallback, canvasHtmlElement, svgHtmlElement, noteRemovedCallback) {
         this.connectorsRectInfos = {};
         this.nodesHtmlElements = {};
         this.canvasHtmlElement = null;
@@ -323,9 +362,11 @@ class FcModelService {
         this.edgeAddedCallback = edgeAddedCallback || (() => { });
         this.nodeRemovedCallback = nodeRemovedCallback || (() => { });
         this.edgeRemovedCallback = edgeRemovedCallback || (() => { });
+        this.noteRemovedCallback = noteRemovedCallback || (() => { });
         this.connectors = new ConnectorsModel(this);
         this.nodes = new NodesModel(this);
         this.edges = new EdgesModel(this);
+        this.notes = new NotesModel(this);
         this.debouncer
             .pipe(debounceTime(100))
             .subscribe(() => this.modelChanged.emit());
@@ -374,6 +415,13 @@ class FcModelService {
         this.model.edges.forEach(edge => {
             this.edges.select(edge);
         });
+        if (this.model.notes) {
+            this.model.notes.forEach(note => {
+                if (!note.readonly) {
+                    this.notes.select(note);
+                }
+            });
+        }
         this.detectChanges();
     }
     deselectAll() {
@@ -391,8 +439,24 @@ class FcModelService {
     getItemInfoAtPoint(x, y) {
         return {
             node: this.getNodeAtPoint(x, y),
-            edge: this.getEdgeAtPoint(x, y)
+            edge: this.getEdgeAtPoint(x, y),
+            note: this.getNoteAtPoint(x, y)
         };
+    }
+    getNoteAtPoint(x, y) {
+        if (!this.model.notes) {
+            return null;
+        }
+        for (const note of this.model.notes) {
+            const canvasBox = this.canvasHtmlElement.getBoundingClientRect();
+            const noteLeft = canvasBox.left + note.x;
+            const noteTop = canvasBox.top + note.y;
+            if (x >= noteLeft && x <= noteLeft + note.width &&
+                y >= noteTop && y <= noteTop + note.height) {
+                return note;
+            }
+        }
+        return null;
     }
     getNodeAtPoint(x, y) {
         for (const node of this.model.nodes) {
@@ -454,6 +518,22 @@ class FcModelService {
                 }
             }
         });
+        if (this.model.notes) {
+            this.model.notes.forEach((value) => {
+                if (!value.readonly) {
+                    const x = canvasElementBox.left + value.x + value.width / 2;
+                    const y = canvasElementBox.top + value.y + value.height / 2;
+                    if (this.inRectBox(x, y, rectBox)) {
+                        this.notes.select(value);
+                    }
+                    else {
+                        if (this.notes.isSelected(value)) {
+                            this.notes.deselect(value);
+                        }
+                    }
+                }
+            });
+        }
     }
     deleteSelected() {
         const edgesToDelete = this.edges.getSelectedEdges();
@@ -463,6 +543,10 @@ class FcModelService {
         const nodesToDelete = this.nodes.getSelectedNodes();
         nodesToDelete.forEach((node) => {
             this.nodes.delete(node);
+        });
+        const notesToDelete = this.notes.getSelectedNotes();
+        notesToDelete.forEach((note) => {
+            this.notes.delete(note);
         });
     }
     isEditable() {
@@ -882,6 +966,128 @@ class FcNodeDraggingService {
                 this.draggedElements.length = 0;
                 this.dragOffsets.length = 0;
             }
+        });
+    }
+}
+
+var NoteDragMode;
+(function (NoteDragMode) {
+    NoteDragMode["None"] = "none";
+    NoteDragMode["Move"] = "move";
+    NoteDragMode["ResizeSE"] = "resize-se";
+    NoteDragMode["ResizeS"] = "resize-s";
+    NoteDragMode["ResizeE"] = "resize-e";
+})(NoteDragMode || (NoteDragMode = {}));
+const NOTE_MIN_WIDTH = 80;
+const NOTE_MIN_HEIGHT = 60;
+class FcNoteDraggingService {
+    constructor(modelService, applyFunction) {
+        this.state = {
+            mode: NoteDragMode.None,
+            notes: [],
+            offsets: [],
+            resizeNote: null,
+            startMouseX: 0,
+            startMouseY: 0,
+            startWidth: 0,
+            startHeight: 0
+        };
+        this.modelService = modelService;
+        this.applyFunction = applyFunction;
+        this.onMouseMove = this.mousemove.bind(this);
+        this.onMouseUp = this.mouseup.bind(this);
+    }
+    isDraggingNote(note) {
+        return this.state.mode !== NoteDragMode.None &&
+            (this.state.notes.includes(note) || this.state.resizeNote === note);
+    }
+    startMove(event, note) {
+        if (note.readonly) {
+            return;
+        }
+        event.stopPropagation();
+        event.preventDefault();
+        const notesToMove = [];
+        if (this.modelService.notes.isSelected(note)) {
+            notesToMove.push(...this.modelService.notes.getSelectedNotes());
+        }
+        else {
+            this.modelService.deselectAll();
+            this.modelService.notes.select(note);
+            notesToMove.push(note);
+        }
+        const offsets = notesToMove.map(n => ({
+            x: n.x - event.clientX,
+            y: n.y - event.clientY
+        }));
+        this.state = {
+            mode: NoteDragMode.Move,
+            notes: notesToMove,
+            offsets,
+            resizeNote: null,
+            startMouseX: event.clientX,
+            startMouseY: event.clientY,
+            startWidth: 0,
+            startHeight: 0
+        };
+        document.addEventListener('mousemove', this.onMouseMove);
+        document.addEventListener('mouseup', this.onMouseUp);
+    }
+    startResize(event, note, mode) {
+        if (note.readonly) {
+            return;
+        }
+        event.stopPropagation();
+        event.preventDefault();
+        this.state = {
+            mode,
+            notes: [],
+            offsets: [],
+            resizeNote: note,
+            startMouseX: event.clientX,
+            startMouseY: event.clientY,
+            startWidth: note.width,
+            startHeight: note.height
+        };
+        document.addEventListener('mousemove', this.onMouseMove);
+        document.addEventListener('mouseup', this.onMouseUp);
+    }
+    mousemove(event) {
+        this.applyFunction(() => {
+            const dx = event.clientX - this.state.startMouseX;
+            const dy = event.clientY - this.state.startMouseY;
+            if (this.state.mode === NoteDragMode.Move) {
+                for (let i = 0; i < this.state.notes.length; i++) {
+                    const note = this.state.notes[i];
+                    const offset = this.state.offsets[i];
+                    note.x = Math.round(Math.max(0, offset.x + event.clientX));
+                    note.y = Math.round(Math.max(0, offset.y + event.clientY));
+                }
+            }
+            else if (this.state.resizeNote) {
+                const note = this.state.resizeNote;
+                if (this.state.mode === NoteDragMode.ResizeSE) {
+                    note.width = Math.max(NOTE_MIN_WIDTH, Math.round(this.state.startWidth + dx));
+                    note.height = Math.max(NOTE_MIN_HEIGHT, Math.round(this.state.startHeight + dy));
+                }
+                else if (this.state.mode === NoteDragMode.ResizeS) {
+                    note.height = Math.max(NOTE_MIN_HEIGHT, Math.round(this.state.startHeight + dy));
+                }
+                else if (this.state.mode === NoteDragMode.ResizeE) {
+                    note.width = Math.max(NOTE_MIN_WIDTH, Math.round(this.state.startWidth + dx));
+                }
+            }
+        });
+    }
+    mouseup(_event) {
+        document.removeEventListener('mousemove', this.onMouseMove);
+        document.removeEventListener('mouseup', this.onMouseUp);
+        this.applyFunction(() => {
+            this.modelService.notifyModelChanged();
+            this.state.mode = NoteDragMode.None;
+            this.state.notes = [];
+            this.state.offsets = [];
+            this.state.resizeNote = null;
         });
     }
 }
@@ -1501,6 +1707,179 @@ i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImpo
                 type: Input
             }] } });
 
+class FcNoteContainerComponent {
+    get noteId() { return this.note.id; }
+    get top() { return this.note.y + 'px'; }
+    get left() { return this.note.x + 'px'; }
+    get width() { return this.note.width + 'px'; }
+    get height() { return this.note.height + 'px'; }
+    constructor(noteComponentConfig, elementRef, componentFactoryResolver) {
+        this.noteComponentConfig = noteComponentConfig;
+        this.elementRef = elementRef;
+        this.componentFactoryResolver = componentFactoryResolver;
+    }
+    ngOnInit() {
+        if (!this.userNoteCallbacks) {
+            this.userNoteCallbacks = {};
+        }
+        this.userNoteCallbacks.noteEdit = this.userNoteCallbacks.noteEdit || (() => { });
+        this.userNoteCallbacks.doubleClick = this.userNoteCallbacks.doubleClick || (() => { });
+        this.userNoteCallbacks.mouseEnter = this.userNoteCallbacks.mouseEnter || (() => { });
+        this.userNoteCallbacks.mouseLeave = this.userNoteCallbacks.mouseLeave || (() => { });
+        const element = this.elementRef.nativeElement;
+        element.classList.add(FlowchartConstants.noteClass);
+        this.updateNoteClass();
+        this.noteContentContainer.clear();
+        const componentFactory = this.componentFactoryResolver.resolveComponentFactory(this.noteComponentConfig.noteComponentType);
+        const componentRef = this.noteContentContainer.createComponent(componentFactory);
+        this.noteComponent = componentRef.instance;
+        this.noteComponent.note = this.note;
+        this.noteComponent.modelservice = this.modelservice;
+        this.noteComponent.userNoteCallbacks = this.userNoteCallbacks;
+        this.updateNoteComponent();
+    }
+    ngAfterViewInit() { }
+    ngOnChanges(changes) {
+        let update = false;
+        for (const propName of Object.keys(changes)) {
+            const change = changes[propName];
+            if (!change.firstChange && change.currentValue !== change.previousValue) {
+                if (['selected', 'edit'].includes(propName)) {
+                    update = true;
+                }
+            }
+        }
+        if (update) {
+            this.updateNoteClass();
+            this.updateNoteComponent();
+        }
+    }
+    updateNoteClass() {
+        const el = this.elementRef.nativeElement;
+        this.toggleClass(el, FlowchartConstants.selectedClass, this.selected);
+        this.toggleClass(el, FlowchartConstants.editClass, this.edit);
+        this.toggleClass(el, FlowchartConstants.draggingClass, this.noteDraggingService?.isDraggingNote(this.note));
+    }
+    updateNoteComponent() {
+        if (!this.noteComponent) {
+            return;
+        }
+        this.noteComponent.selected = this.selected;
+        this.noteComponent.edit = this.edit;
+    }
+    toggleClass(el, clazz, set) {
+        if (set) {
+            el.classList.add(clazz);
+        }
+        else {
+            el.classList.remove(clazz);
+        }
+    }
+    mousedown(event) {
+        event.stopPropagation();
+        if (!this.note.readonly && this.modelservice.isEditable()) {
+            this.noteDraggingService.startMove(event, this.note);
+        }
+    }
+    click(event) {
+        if (!this.note.readonly) {
+            this.modelservice.notes.handleClicked(this.note, event.ctrlKey);
+            event.stopPropagation();
+            event.preventDefault();
+        }
+    }
+    mouseenter(event) {
+        if (!this.note.readonly && this.userNoteCallbacks) {
+            this.userNoteCallbacks.mouseEnter(event, this.note);
+        }
+    }
+    mouseleave(event) {
+        if (!this.note.readonly && this.userNoteCallbacks) {
+            this.userNoteCallbacks.mouseLeave(event, this.note);
+        }
+    }
+    startResize(event, mode) {
+        if (!this.note.readonly && this.modelservice.isEditable()) {
+            this.noteDraggingService.startResize(event, this.note, mode);
+        }
+    }
+    get noteDragMode() {
+        return NoteDragMode;
+    }
+    static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNoteContainerComponent, deps: [{ token: FC_NOTE_COMPONENT_CONFIG }, { token: i0.ElementRef }, { token: i0.ComponentFactoryResolver }], target: i0.ɵɵFactoryTarget.Component }); }
+    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "14.0.0", version: "20.3.16", type: FcNoteContainerComponent, isStandalone: false, selector: "fc-note", inputs: { note: "note", modelservice: "modelservice", noteDraggingService: "noteDraggingService", userNoteCallbacks: "userNoteCallbacks", selected: "selected", edit: "edit" }, host: { listeners: { "mousedown": "mousedown($event)", "click": "click($event)", "mouseenter": "mouseenter($event)", "mouseleave": "mouseleave($event)" }, properties: { "attr.id": "this.noteId", "style.top": "this.top", "style.left": "this.left", "style.width": "this.width", "style.height": "this.height" } }, viewQueries: [{ propertyName: "noteContentContainer", first: true, predicate: ["noteContent"], descendants: true, read: ViewContainerRef, static: true }], usesOnChanges: true, ngImport: i0, template: "<ng-template #noteContent></ng-template>\n<div class=\"fc-note-resize-handle fc-note-resize-s\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeS)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-e\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-se\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeSE)\">\n</div>\n", styles: [":host{position:absolute;z-index:0;box-sizing:border-box;display:block;cursor:move}:host.fc-dragging{z-index:5;opacity:.85}.fc-note-resize-handle{position:absolute;z-index:10}.fc-note-resize-se{bottom:0;right:0;width:14px;height:14px;cursor:se-resize}.fc-note-resize-s{bottom:0;left:50%;transform:translate(-50%);width:40px;height:8px;cursor:s-resize}.fc-note-resize-e{right:0;top:50%;transform:translateY(-50%);width:8px;height:40px;cursor:e-resize}\n"] }); }
+}
+i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNoteContainerComponent, decorators: [{
+            type: Component,
+            args: [{ selector: 'fc-note', standalone: false, template: "<ng-template #noteContent></ng-template>\n<div class=\"fc-note-resize-handle fc-note-resize-s\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeS)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-e\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-se\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeSE)\">\n</div>\n", styles: [":host{position:absolute;z-index:0;box-sizing:border-box;display:block;cursor:move}:host.fc-dragging{z-index:5;opacity:.85}.fc-note-resize-handle{position:absolute;z-index:10}.fc-note-resize-se{bottom:0;right:0;width:14px;height:14px;cursor:se-resize}.fc-note-resize-s{bottom:0;left:50%;transform:translate(-50%);width:40px;height:8px;cursor:s-resize}.fc-note-resize-e{right:0;top:50%;transform:translateY(-50%);width:8px;height:40px;cursor:e-resize}\n"] }]
+        }], ctorParameters: () => [{ type: undefined, decorators: [{
+                    type: Inject,
+                    args: [FC_NOTE_COMPONENT_CONFIG]
+                }] }, { type: i0.ElementRef }, { type: i0.ComponentFactoryResolver }], propDecorators: { note: [{
+                type: Input
+            }], modelservice: [{
+                type: Input
+            }], noteDraggingService: [{
+                type: Input
+            }], userNoteCallbacks: [{
+                type: Input
+            }], selected: [{
+                type: Input
+            }], edit: [{
+                type: Input
+            }], noteContentContainer: [{
+                type: ViewChild,
+                args: ['noteContent', { read: ViewContainerRef, static: true }]
+            }], noteId: [{
+                type: HostBinding,
+                args: ['attr.id']
+            }], top: [{
+                type: HostBinding,
+                args: ['style.top']
+            }], left: [{
+                type: HostBinding,
+                args: ['style.left']
+            }], width: [{
+                type: HostBinding,
+                args: ['style.width']
+            }], height: [{
+                type: HostBinding,
+                args: ['style.height']
+            }], mousedown: [{
+                type: HostListener,
+                args: ['mousedown', ['$event']]
+            }], click: [{
+                type: HostListener,
+                args: ['click', ['$event']]
+            }], mouseenter: [{
+                type: HostListener,
+                args: ['mouseenter', ['$event']]
+            }], mouseleave: [{
+                type: HostListener,
+                args: ['mouseleave', ['$event']]
+            }] } });
+class FcNoteComponent {
+    constructor() {
+        this.flowchartConstants = FlowchartConstants;
+    }
+    ngOnInit() { }
+    static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNoteComponent, deps: [], target: i0.ɵɵFactoryTarget.Directive }); }
+    static { this.ɵdir = i0.ɵɵngDeclareDirective({ minVersion: "14.0.0", version: "20.3.16", type: FcNoteComponent, isStandalone: true, inputs: { note: "note", selected: "selected", edit: "edit", modelservice: "modelservice", userNoteCallbacks: "userNoteCallbacks" }, ngImport: i0 }); }
+}
+i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNoteComponent, decorators: [{
+            type: Directive
+        }], propDecorators: { note: [{
+                type: Input
+            }], selected: [{
+                type: Input
+            }], edit: [{
+                type: Input
+            }], modelservice: [{
+                type: Input
+            }], userNoteCallbacks: [{
+                type: Input
+            }] } });
+
 class NgxFlowchartComponent {
     get canvasClass() {
         return FlowchartConstants.canvasClass;
@@ -1523,6 +1902,7 @@ class NgxFlowchartComponent {
         this.flowchartConstants = FlowchartConstants;
         this.nodesDiffer = this.differs.find([]).create((_index, item) => item);
         this.edgesDiffer = this.differs.find([]).create((_index, item) => item);
+        this.notesDiffer = this.differs.find([]).create((_index, item) => item);
         this.detectChangesSubject = new Subject();
         this.arrowDefId = 'arrow-' + Math.random();
         this.arrowDefIdSelected = this.arrowDefId + '-selected';
@@ -1541,18 +1921,20 @@ class NgxFlowchartComponent {
         this.automaticResize = this.automaticResize || false;
         for (const key of Object.keys(this.userCallbacks)) {
             const callback = this.userCallbacks[key];
-            if (typeof callback !== 'function' && key !== 'nodeCallbacks') {
+            if (typeof callback !== 'function' && key !== 'nodeCallbacks' && key !== 'noteCallbacks') {
                 throw new Error('All callbacks should be functions.');
             }
         }
         this.userNodeCallbacks = this.userCallbacks.nodeCallbacks;
+        this.userNoteCallbacks = this.userCallbacks.noteCallbacks || {};
         const element = $(this.elementRef.nativeElement);
-        this.modelService = new FcModelService(this.modelValidation, this.model, this.modelChanged, this.detectChangesSubject, this.selectedObjects, this.userCallbacks.dropNode, this.userCallbacks.createEdge, this.userCallbacks.edgeAdded, this.userCallbacks.nodeRemoved, this.userCallbacks.edgeRemoved, element[0], element[0].querySelector('svg'));
+        this.modelService = new FcModelService(this.modelValidation, this.model, this.modelChanged, this.detectChangesSubject, this.selectedObjects, this.userCallbacks.dropNode, this.userCallbacks.createEdge, this.userCallbacks.edgeAdded, this.userCallbacks.nodeRemoved, this.userCallbacks.edgeRemoved, element[0], element[0].querySelector('svg'), this.userCallbacks.noteRemoved);
         if (this.dropTargetId) {
             this.modelService.dropTargetId = this.dropTargetId;
         }
         const applyFunction = this.zone.run.bind(this.zone);
         this.nodeDraggingService = new FcNodeDraggingService(this.modelService, applyFunction, this.automaticResize, this.dragAnimation);
+        this.noteDraggingService = new FcNoteDraggingService(this.modelService, applyFunction);
         this.edgeDraggingService = new FcEdgeDraggingService(this.modelValidation, this.edgeDrawingService, this.modelService, this.model, this.userCallbacks.isValidEdge || null, applyFunction, this.dragAnimation, this.edgeStyle);
         this.mouseoverService = new FcMouseOverService(applyFunction);
         this.rectangleSelectService = new FcRectangleSelectService(this.modelService, element[0].querySelector('#select-rectangle'), applyFunction);
@@ -1581,8 +1963,10 @@ class NgxFlowchartComponent {
         if (this.model) {
             const nodesChange = this.nodesDiffer.diff(this.model.nodes);
             const edgesChange = this.edgesDiffer.diff(this.model.edges);
+            const notesChange = this.notesDiffer.diff(this.model.notes || []);
             let nodesChanged = false;
             let edgesChanged = false;
+            let notesChanged = false;
             if (nodesChange !== null) {
                 nodesChange.forEachAddedItem(() => {
                     nodesChanged = true;
@@ -1599,10 +1983,18 @@ class NgxFlowchartComponent {
                     edgesChanged = true;
                 });
             }
+            if (notesChange !== null) {
+                notesChange.forEachAddedItem(() => {
+                    notesChanged = true;
+                });
+                notesChange.forEachRemovedItem(() => {
+                    notesChanged = true;
+                });
+            }
             if (nodesChanged) {
                 this.adjustCanvasSize(this.fitModelSizeByDefault);
             }
-            if (nodesChanged || edgesChanged) {
+            if (nodesChanged || edgesChanged || notesChanged) {
                 this.detectChangesSubject.next(null);
             }
         }
@@ -1689,11 +2081,11 @@ class NgxFlowchartComponent {
         this.rectangleSelectService.mouseup(event);
     }
     static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: NgxFlowchartComponent, deps: [{ token: i0.ElementRef }, { token: i0.IterableDiffers }, { token: FcModelValidationService }, { token: FcEdgeDrawingService }, { token: i0.ChangeDetectorRef }, { token: i0.NgZone }], target: i0.ɵɵFactoryTarget.Component }); }
-    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "17.0.0", version: "20.3.16", type: NgxFlowchartComponent, isStandalone: false, selector: "fc-canvas", inputs: { model: "model", selectedObjects: "selectedObjects", edgeStyle: "edgeStyle", userCallbacks: "userCallbacks", automaticResize: "automaticResize", dragAnimation: "dragAnimation", nodeWidth: "nodeWidth", nodeHeight: "nodeHeight", dropTargetId: "dropTargetId", fitModelSizeByDefault: "fitModelSizeByDefault" }, outputs: { modelChanged: "modelChanged" }, host: { listeners: { "dragover": "dragover($event)", "drop": "drop($event)", "mousedown": "mousedown($event)", "mousemove": "mousemove($event)", "mouseup": "mouseup($event)" }, properties: { "attr.class": "this.canvasClass" } }, ngImport: i0, template: "<div (click)=\"canvasClick($event)\" class=\"fc-canvas-container\">\n  <svg class=\"fc-canvas-svg\">\n    <defs>\n      <marker class=\"fc-arrow-marker\" [id]=\"arrowDefId\" markerWidth=\"5\" markerHeight=\"5\" viewBox=\"-6 -6 12 12\" refX=\"10\" refY=\"0\" markerUnits=\"strokeWidth\" orient=\"auto\">\n        <polygon points=\"-2,0 -5,5 5,0 -5,-5\" stroke=\"gray\" fill=\"gray\" stroke-width=\"1px\"/>\n      </marker>\n      <marker class=\"fc-arrow-marker-selected\" [id]=\"arrowDefIdSelected\" markerWidth=\"5\" markerHeight=\"5\" viewBox=\"-6 -6 12 12\" refX=\"10\" refY=\"0\" markerUnits=\"strokeWidth\" orient=\"auto\">\n        <polygon points=\"-2,0 -5,5 5,0 -5,-5\" stroke=\"red\" fill=\"red\" stroke-width=\"1px\"/>\n      </marker>\n    </defs>\n    @for (edge of model.edges; track edge) {\n      <g>\n        <path\n          [id]=\"'fc-edge-path-'+$index\"\n          (mousedown)=\"edgeMouseDown($event, edge)\"\n          (click)=\"edgeClick($event, edge)\"\n          (dblclick)=\"edgeDoubleClick($event, edge)\"\n          (mouseover)=\"edgeMouseOver($event, edge)\"\n          (mouseenter)=\"edgeMouseEnter($event, edge)\"\n          (mouseleave)=\"edgeMouseLeave($event, edge)\"\n        [class]=\"(modelService.edges.isSelected(edge) && flowchartConstants.selectedClass + ' ' + flowchartConstants.edgeClass) ||\n                      edge === mouseoverService.mouseoverscope.edge && flowchartConstants.hoverClass + ' ' + flowchartConstants.edgeClass ||\n                      edge.active && flowchartConstants.activeClass + ' ' + flowchartConstants.edgeClass ||\n                      flowchartConstants.edgeClass\"\n          [attr.d]=\"getEdgeDAttribute(edge)\"\n          [attr.marker-end]=\"'url(#' + (modelService.edges.isSelected(edge) ? arrowDefIdSelected : arrowDefId) + ')'\">\n        </path>\n      </g>\n    }\n    @if (dragAnimation === flowchartConstants.dragAnimationRepaint && edgeDraggingService.edgeDragging.isDragging) {\n      <g>\n        <path [class]=\"flowchartConstants.edgeClass + ' ' + flowchartConstants.draggingClass\"\n        [attr.d]=\"edgeDrawingService.getEdgeDAttribute(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2, edgeStyle)\"></path>\n        <circle class=\"edge-endpoint\" r=\"4\"\n          [attr.cx]=\"edgeDraggingService.edgeDragging.dragPoint2.x\"\n          [attr.cy]=\"edgeDraggingService.edgeDragging.dragPoint2.y\">\n        </circle>\n      </g>\n    }\n    @if (dragAnimation === flowchartConstants.dragAnimationShadow) {\n      <g\n        class=\"shadow-svg-class {{ flowchartConstants.edgeClass }} {{ flowchartConstants.draggingClass }}\"\n        style=\"display:none\">\n        <path d=\"\"></path>\n        <circle class=\"edge-endpoint\" r=\"4\"></circle>\n      </g>\n    }\n  </svg>\n  @for (node of model.nodes; track node) {\n    <fc-node\n      [selected]=\"modelService.nodes.isSelected(node)\"\n      [edit]=\"modelService.nodes.isEdit(node)\"\n      [underMouse]=\"node === mouseoverService.mouseoverscope.node\"\n      [node]=\"node\"\n      [mouseOverConnector]=\"mouseoverService.mouseoverscope.connector\"\n      [modelservice]=\"modelService\"\n      [dragging]=\"nodeDraggingService.isDraggingNode(node)\"\n      [callbacks]=\"callbacks\"\n      [userNodeCallbacks]=\"userNodeCallbacks\">\n    </fc-node>\n  }\n  @if (dragAnimation === flowchartConstants.dragAnimationRepaint && edgeDraggingService.edgeDragging.isDragging) {\n    <div\n      [class]=\"'fc-noselect ' + flowchartConstants.edgeLabelClass\"\n      [style]=\"{\n        top: (edgeDrawingService.getEdgeCenter(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2).y)+'px',\n        left: (edgeDrawingService.getEdgeCenter(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2).x)+'px'\n      }\">\n      <div class=\"fc-edge-label-text\">\n        @if (edgeDraggingService.edgeDragging.dragLabel) {\n          <span [attr.id]=\"'fc-edge-label-dragging'\">{{edgeDraggingService.edgeDragging.dragLabel}}</span>\n        }\n      </div>\n    </div>\n  }\n  @for (edge of model.edges; track edge) {\n    <div\n      (mousedown)=\"edgeMouseDown($event, edge)\"\n      (click)=\"edgeClick($event, edge)\"\n      (dblclick)=\"edgeDoubleClick($event, edge)\"\n      (mouseover)=\"edgeMouseOver($event, edge)\"\n      (mouseenter)=\"edgeMouseEnter($event, edge)\"\n      (mouseleave)=\"edgeMouseLeave($event, edge)\"\n      [class]=\"'fc-noselect ' + ((modelService.edges.isEdit(edge) && flowchartConstants.editClass + ' ' + flowchartConstants.edgeLabelClass) ||\n                        (modelService.edges.isSelected(edge) && flowchartConstants.selectedClass + ' ' + flowchartConstants.edgeLabelClass) ||\n                        edge === mouseoverService.mouseoverscope.edge && flowchartConstants.hoverClass + ' ' + flowchartConstants.edgeLabelClass ||\n                        edge.active && flowchartConstants.activeClass + ' ' + flowchartConstants.edgeLabelClass ||\n                        flowchartConstants.edgeLabelClass)\"\n      [style]=\"{\n        top: (edgeDrawingService.getEdgeCenter(modelService.edges.sourceCoord(edge), modelService.edges.destCoord(edge)).y)+'px',\n        left: (edgeDrawingService.getEdgeCenter(modelService.edges.sourceCoord(edge), modelService.edges.destCoord(edge)).x)+'px'\n      }\">\n      <div class=\"fc-edge-label-text\">\n        @if (modelService.isEditable()) {\n          <div class=\"fc-noselect fc-nodeedit\" (click)=\"edgeEdit($event, edge)\">\n            <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n          </div>\n        }\n        @if (modelService.isEditable()) {\n          <div class=\"fc-noselect fc-nodedelete\" (click)=\"edgeRemove($event, edge)\">\n            &times;\n          </div>\n        }\n        @if (edge.label) {\n          <span [attr.id]=\"'fc-edge-label-'+$index\">{{edge.label}}</span>\n        }\n      </div>\n    </div>\n  }\n  <div id=\"select-rectangle\" class=\"fc-select-rectangle\" hidden>\n  </div>\n</div>\n", styles: [":host{display:block;position:relative;width:100%;height:100%;background-size:25px 25px;background-image:linear-gradient(to right,rgba(0,0,0,.1) 1px,transparent 1px),linear-gradient(to bottom,rgba(0,0,0,.1) 1px,transparent 1px);background-color:transparent;min-width:100%;min-height:100%;-webkit-touch-callout:none;-webkit-user-select:none;-khtml-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}:host .fc-canvas-container{display:block;position:relative;width:100%;height:100%}:host .fc-canvas-container svg.fc-canvas-svg{display:block;position:relative;width:100%;height:100%}:host .fc-edge{stroke:gray;stroke-width:4;transition:stroke-width .2s;fill:transparent}:host .fc-edge.fc-hover{stroke:gray;stroke-width:6;fill:transparent}:host .fc-edge.fc-selected{stroke:red;stroke-width:4;fill:transparent}:host .fc-edge.fc-active{animation:dash 3s linear infinite;stroke-dasharray:20}:host .fc-edge.fc-dragging{pointer-events:none}:host .fc-arrow-marker polygon{stroke:gray;fill:gray}:host .fc-arrow-marker-selected polygon{stroke:red;fill:red}:host .edge-endpoint{fill:gray}:host .fc-noselect{-webkit-touch-callout:none;-webkit-user-select:none;-khtml-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}:host .fc-edge-label{position:absolute;opacity:.8;transition:transform .2s;transform-origin:bottom left;margin:0 auto}:host .fc-edge-label .fc-edge-label-text{position:absolute;-webkit-transform:translate(-50%,-50%);transform:translate(-50%,-50%);white-space:nowrap;text-align:center;font-size:16px}:host .fc-edge-label .fc-edge-label-text span{cursor:default;border:solid #ff3d00;border-radius:10px;color:#ff3d00;background-color:#fff;padding:3px 5px}:host .fc-edge-label .fc-nodeedit{top:-30px;right:14px}:host .fc-edge-label .fc-nodedelete{top:-30px;right:-13px}:host .fc-edge-label.fc-hover{transform:scale(1.25)}:host .fc-edge-label.fc-selected .fc-edge-label-text span,:host .fc-edge-label.fc-edit .fc-edge-label-text span{border:solid red;color:#fff;font-weight:600;background-color:red}:host .fc-select-rectangle{border:2px dashed #5262ff;position:absolute;background:#147dff1a;z-index:2}@keyframes dash{0%{stroke-dashoffset:500}}:host ::ng-deep .fc-nodeedit{display:none;font-size:15px}:host ::ng-deep .fc-nodedelete{display:none;font-size:18px}:host ::ng-deep .fc-edit .fc-nodeedit,:host ::ng-deep .fc-edit .fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer}:host ::ng-deep .fc-edit .fc-nodeedit{top:-24px;right:16px}:host ::ng-deep .fc-edit .fc-nodedelete{top:-24px;right:-13px}\n"], dependencies: [{ kind: "component", type: FcNodeContainerComponent, selector: "fc-node", inputs: ["callbacks", "userNodeCallbacks", "node", "selected", "edit", "underMouse", "mouseOverConnector", "modelservice", "dragging"] }], changeDetection: i0.ChangeDetectionStrategy.OnPush }); }
+    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "17.0.0", version: "20.3.16", type: NgxFlowchartComponent, isStandalone: false, selector: "fc-canvas", inputs: { model: "model", selectedObjects: "selectedObjects", edgeStyle: "edgeStyle", userCallbacks: "userCallbacks", automaticResize: "automaticResize", dragAnimation: "dragAnimation", nodeWidth: "nodeWidth", nodeHeight: "nodeHeight", dropTargetId: "dropTargetId", fitModelSizeByDefault: "fitModelSizeByDefault" }, outputs: { modelChanged: "modelChanged" }, host: { listeners: { "dragover": "dragover($event)", "drop": "drop($event)", "mousedown": "mousedown($event)", "mousemove": "mousemove($event)", "mouseup": "mouseup($event)" }, properties: { "attr.class": "this.canvasClass" } }, ngImport: i0, template: "<div (click)=\"canvasClick($event)\" class=\"fc-canvas-container\">\n  @for (note of (model.notes || []); track note) {\n    <fc-note\n      [note]=\"note\"\n      [selected]=\"modelService.notes.isSelected(note)\"\n      [edit]=\"modelService.notes.isEdit(note)\"\n      [modelservice]=\"modelService\"\n      [noteDraggingService]=\"noteDraggingService\"\n      [userNoteCallbacks]=\"userNoteCallbacks\">\n    </fc-note>\n  }\n  <svg class=\"fc-canvas-svg\">\n    <defs>\n      <marker class=\"fc-arrow-marker\" [id]=\"arrowDefId\" markerWidth=\"5\" markerHeight=\"5\" viewBox=\"-6 -6 12 12\" refX=\"10\" refY=\"0\" markerUnits=\"strokeWidth\" orient=\"auto\">\n        <polygon points=\"-2,0 -5,5 5,0 -5,-5\" stroke=\"gray\" fill=\"gray\" stroke-width=\"1px\"/>\n      </marker>\n      <marker class=\"fc-arrow-marker-selected\" [id]=\"arrowDefIdSelected\" markerWidth=\"5\" markerHeight=\"5\" viewBox=\"-6 -6 12 12\" refX=\"10\" refY=\"0\" markerUnits=\"strokeWidth\" orient=\"auto\">\n        <polygon points=\"-2,0 -5,5 5,0 -5,-5\" stroke=\"red\" fill=\"red\" stroke-width=\"1px\"/>\n      </marker>\n    </defs>\n    @for (edge of model.edges; track edge) {\n      <g>\n        <path\n          [id]=\"'fc-edge-path-'+$index\"\n          (mousedown)=\"edgeMouseDown($event, edge)\"\n          (click)=\"edgeClick($event, edge)\"\n          (dblclick)=\"edgeDoubleClick($event, edge)\"\n          (mouseover)=\"edgeMouseOver($event, edge)\"\n          (mouseenter)=\"edgeMouseEnter($event, edge)\"\n          (mouseleave)=\"edgeMouseLeave($event, edge)\"\n        [class]=\"(modelService.edges.isSelected(edge) && flowchartConstants.selectedClass + ' ' + flowchartConstants.edgeClass) ||\n                      edge === mouseoverService.mouseoverscope.edge && flowchartConstants.hoverClass + ' ' + flowchartConstants.edgeClass ||\n                      edge.active && flowchartConstants.activeClass + ' ' + flowchartConstants.edgeClass ||\n                      flowchartConstants.edgeClass\"\n          [attr.d]=\"getEdgeDAttribute(edge)\"\n          [attr.marker-end]=\"'url(#' + (modelService.edges.isSelected(edge) ? arrowDefIdSelected : arrowDefId) + ')'\">\n        </path>\n      </g>\n    }\n    @if (dragAnimation === flowchartConstants.dragAnimationRepaint && edgeDraggingService.edgeDragging.isDragging) {\n      <g>\n        <path [class]=\"flowchartConstants.edgeClass + ' ' + flowchartConstants.draggingClass\"\n        [attr.d]=\"edgeDrawingService.getEdgeDAttribute(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2, edgeStyle)\"></path>\n        <circle class=\"edge-endpoint\" r=\"4\"\n          [attr.cx]=\"edgeDraggingService.edgeDragging.dragPoint2.x\"\n          [attr.cy]=\"edgeDraggingService.edgeDragging.dragPoint2.y\">\n        </circle>\n      </g>\n    }\n    @if (dragAnimation === flowchartConstants.dragAnimationShadow) {\n      <g\n        class=\"shadow-svg-class {{ flowchartConstants.edgeClass }} {{ flowchartConstants.draggingClass }}\"\n        style=\"display:none\">\n        <path d=\"\"></path>\n        <circle class=\"edge-endpoint\" r=\"4\"></circle>\n      </g>\n    }\n  </svg>\n  @for (node of model.nodes; track node) {\n    <fc-node\n      [selected]=\"modelService.nodes.isSelected(node)\"\n      [edit]=\"modelService.nodes.isEdit(node)\"\n      [underMouse]=\"node === mouseoverService.mouseoverscope.node\"\n      [node]=\"node\"\n      [mouseOverConnector]=\"mouseoverService.mouseoverscope.connector\"\n      [modelservice]=\"modelService\"\n      [dragging]=\"nodeDraggingService.isDraggingNode(node)\"\n      [callbacks]=\"callbacks\"\n      [userNodeCallbacks]=\"userNodeCallbacks\">\n    </fc-node>\n  }\n  @if (dragAnimation === flowchartConstants.dragAnimationRepaint && edgeDraggingService.edgeDragging.isDragging) {\n    <div\n      [class]=\"'fc-noselect ' + flowchartConstants.edgeLabelClass\"\n      [style]=\"{\n        top: (edgeDrawingService.getEdgeCenter(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2).y)+'px',\n        left: (edgeDrawingService.getEdgeCenter(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2).x)+'px'\n      }\">\n      <div class=\"fc-edge-label-text\">\n        @if (edgeDraggingService.edgeDragging.dragLabel) {\n          <span [attr.id]=\"'fc-edge-label-dragging'\">{{edgeDraggingService.edgeDragging.dragLabel}}</span>\n        }\n      </div>\n    </div>\n  }\n  @for (edge of model.edges; track edge) {\n    <div\n      (mousedown)=\"edgeMouseDown($event, edge)\"\n      (click)=\"edgeClick($event, edge)\"\n      (dblclick)=\"edgeDoubleClick($event, edge)\"\n      (mouseover)=\"edgeMouseOver($event, edge)\"\n      (mouseenter)=\"edgeMouseEnter($event, edge)\"\n      (mouseleave)=\"edgeMouseLeave($event, edge)\"\n      [class]=\"'fc-noselect ' + ((modelService.edges.isEdit(edge) && flowchartConstants.editClass + ' ' + flowchartConstants.edgeLabelClass) ||\n                        (modelService.edges.isSelected(edge) && flowchartConstants.selectedClass + ' ' + flowchartConstants.edgeLabelClass) ||\n                        edge === mouseoverService.mouseoverscope.edge && flowchartConstants.hoverClass + ' ' + flowchartConstants.edgeLabelClass ||\n                        edge.active && flowchartConstants.activeClass + ' ' + flowchartConstants.edgeLabelClass ||\n                        flowchartConstants.edgeLabelClass)\"\n      [style]=\"{\n        top: (edgeDrawingService.getEdgeCenter(modelService.edges.sourceCoord(edge), modelService.edges.destCoord(edge)).y)+'px',\n        left: (edgeDrawingService.getEdgeCenter(modelService.edges.sourceCoord(edge), modelService.edges.destCoord(edge)).x)+'px'\n      }\">\n      <div class=\"fc-edge-label-text\">\n        @if (modelService.isEditable()) {\n          <div class=\"fc-noselect fc-nodeedit\" (click)=\"edgeEdit($event, edge)\">\n            <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n          </div>\n        }\n        @if (modelService.isEditable()) {\n          <div class=\"fc-noselect fc-nodedelete\" (click)=\"edgeRemove($event, edge)\">\n            &times;\n          </div>\n        }\n        @if (edge.label) {\n          <span [attr.id]=\"'fc-edge-label-'+$index\">{{edge.label}}</span>\n        }\n      </div>\n    </div>\n  }\n  <div id=\"select-rectangle\" class=\"fc-select-rectangle\" hidden>\n  </div>\n</div>\n", styles: [":host{display:block;position:relative;width:100%;height:100%;background-size:25px 25px;background-image:linear-gradient(to right,rgba(0,0,0,.1) 1px,transparent 1px),linear-gradient(to bottom,rgba(0,0,0,.1) 1px,transparent 1px);background-color:transparent;min-width:100%;min-height:100%;-webkit-touch-callout:none;-webkit-user-select:none;-khtml-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}:host .fc-canvas-container{display:block;position:relative;width:100%;height:100%}:host .fc-canvas-container svg.fc-canvas-svg{display:block;position:relative;width:100%;height:100%}:host .fc-edge{stroke:gray;stroke-width:4;transition:stroke-width .2s;fill:transparent}:host .fc-edge.fc-hover{stroke:gray;stroke-width:6;fill:transparent}:host .fc-edge.fc-selected{stroke:red;stroke-width:4;fill:transparent}:host .fc-edge.fc-active{animation:dash 3s linear infinite;stroke-dasharray:20}:host .fc-edge.fc-dragging{pointer-events:none}:host .fc-arrow-marker polygon{stroke:gray;fill:gray}:host .fc-arrow-marker-selected polygon{stroke:red;fill:red}:host .edge-endpoint{fill:gray}:host .fc-noselect{-webkit-touch-callout:none;-webkit-user-select:none;-khtml-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}:host .fc-edge-label{position:absolute;opacity:.8;transition:transform .2s;transform-origin:bottom left;margin:0 auto}:host .fc-edge-label .fc-edge-label-text{position:absolute;-webkit-transform:translate(-50%,-50%);transform:translate(-50%,-50%);white-space:nowrap;text-align:center;font-size:16px}:host .fc-edge-label .fc-edge-label-text span{cursor:default;border:solid #ff3d00;border-radius:10px;color:#ff3d00;background-color:#fff;padding:3px 5px}:host .fc-edge-label .fc-nodeedit{top:-30px;right:14px}:host .fc-edge-label .fc-nodedelete{top:-30px;right:-13px}:host .fc-edge-label.fc-hover{transform:scale(1.25)}:host .fc-edge-label.fc-selected .fc-edge-label-text span,:host .fc-edge-label.fc-edit .fc-edge-label-text span{border:solid red;color:#fff;font-weight:600;background-color:red}:host .fc-select-rectangle{border:2px dashed #5262ff;position:absolute;background:#147dff1a;z-index:2}@keyframes dash{0%{stroke-dashoffset:500}}:host ::ng-deep .fc-nodeedit{display:none;font-size:15px}:host ::ng-deep .fc-nodedelete{display:none;font-size:18px}:host ::ng-deep .fc-edit .fc-nodeedit,:host ::ng-deep .fc-edit .fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer}:host ::ng-deep .fc-edit .fc-nodeedit{top:-24px;right:16px}:host ::ng-deep .fc-edit .fc-nodedelete{top:-24px;right:-13px}\n"], dependencies: [{ kind: "component", type: FcNodeContainerComponent, selector: "fc-node", inputs: ["callbacks", "userNodeCallbacks", "node", "selected", "edit", "underMouse", "mouseOverConnector", "modelservice", "dragging"] }, { kind: "component", type: FcNoteContainerComponent, selector: "fc-note", inputs: ["note", "modelservice", "noteDraggingService", "userNoteCallbacks", "selected", "edit"] }], changeDetection: i0.ChangeDetectionStrategy.OnPush }); }
 }
 i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: NgxFlowchartComponent, decorators: [{
             type: Component,
-            args: [{ selector: 'fc-canvas', changeDetection: ChangeDetectionStrategy.OnPush, standalone: false, template: "<div (click)=\"canvasClick($event)\" class=\"fc-canvas-container\">\n  <svg class=\"fc-canvas-svg\">\n    <defs>\n      <marker class=\"fc-arrow-marker\" [id]=\"arrowDefId\" markerWidth=\"5\" markerHeight=\"5\" viewBox=\"-6 -6 12 12\" refX=\"10\" refY=\"0\" markerUnits=\"strokeWidth\" orient=\"auto\">\n        <polygon points=\"-2,0 -5,5 5,0 -5,-5\" stroke=\"gray\" fill=\"gray\" stroke-width=\"1px\"/>\n      </marker>\n      <marker class=\"fc-arrow-marker-selected\" [id]=\"arrowDefIdSelected\" markerWidth=\"5\" markerHeight=\"5\" viewBox=\"-6 -6 12 12\" refX=\"10\" refY=\"0\" markerUnits=\"strokeWidth\" orient=\"auto\">\n        <polygon points=\"-2,0 -5,5 5,0 -5,-5\" stroke=\"red\" fill=\"red\" stroke-width=\"1px\"/>\n      </marker>\n    </defs>\n    @for (edge of model.edges; track edge) {\n      <g>\n        <path\n          [id]=\"'fc-edge-path-'+$index\"\n          (mousedown)=\"edgeMouseDown($event, edge)\"\n          (click)=\"edgeClick($event, edge)\"\n          (dblclick)=\"edgeDoubleClick($event, edge)\"\n          (mouseover)=\"edgeMouseOver($event, edge)\"\n          (mouseenter)=\"edgeMouseEnter($event, edge)\"\n          (mouseleave)=\"edgeMouseLeave($event, edge)\"\n        [class]=\"(modelService.edges.isSelected(edge) && flowchartConstants.selectedClass + ' ' + flowchartConstants.edgeClass) ||\n                      edge === mouseoverService.mouseoverscope.edge && flowchartConstants.hoverClass + ' ' + flowchartConstants.edgeClass ||\n                      edge.active && flowchartConstants.activeClass + ' ' + flowchartConstants.edgeClass ||\n                      flowchartConstants.edgeClass\"\n          [attr.d]=\"getEdgeDAttribute(edge)\"\n          [attr.marker-end]=\"'url(#' + (modelService.edges.isSelected(edge) ? arrowDefIdSelected : arrowDefId) + ')'\">\n        </path>\n      </g>\n    }\n    @if (dragAnimation === flowchartConstants.dragAnimationRepaint && edgeDraggingService.edgeDragging.isDragging) {\n      <g>\n        <path [class]=\"flowchartConstants.edgeClass + ' ' + flowchartConstants.draggingClass\"\n        [attr.d]=\"edgeDrawingService.getEdgeDAttribute(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2, edgeStyle)\"></path>\n        <circle class=\"edge-endpoint\" r=\"4\"\n          [attr.cx]=\"edgeDraggingService.edgeDragging.dragPoint2.x\"\n          [attr.cy]=\"edgeDraggingService.edgeDragging.dragPoint2.y\">\n        </circle>\n      </g>\n    }\n    @if (dragAnimation === flowchartConstants.dragAnimationShadow) {\n      <g\n        class=\"shadow-svg-class {{ flowchartConstants.edgeClass }} {{ flowchartConstants.draggingClass }}\"\n        style=\"display:none\">\n        <path d=\"\"></path>\n        <circle class=\"edge-endpoint\" r=\"4\"></circle>\n      </g>\n    }\n  </svg>\n  @for (node of model.nodes; track node) {\n    <fc-node\n      [selected]=\"modelService.nodes.isSelected(node)\"\n      [edit]=\"modelService.nodes.isEdit(node)\"\n      [underMouse]=\"node === mouseoverService.mouseoverscope.node\"\n      [node]=\"node\"\n      [mouseOverConnector]=\"mouseoverService.mouseoverscope.connector\"\n      [modelservice]=\"modelService\"\n      [dragging]=\"nodeDraggingService.isDraggingNode(node)\"\n      [callbacks]=\"callbacks\"\n      [userNodeCallbacks]=\"userNodeCallbacks\">\n    </fc-node>\n  }\n  @if (dragAnimation === flowchartConstants.dragAnimationRepaint && edgeDraggingService.edgeDragging.isDragging) {\n    <div\n      [class]=\"'fc-noselect ' + flowchartConstants.edgeLabelClass\"\n      [style]=\"{\n        top: (edgeDrawingService.getEdgeCenter(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2).y)+'px',\n        left: (edgeDrawingService.getEdgeCenter(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2).x)+'px'\n      }\">\n      <div class=\"fc-edge-label-text\">\n        @if (edgeDraggingService.edgeDragging.dragLabel) {\n          <span [attr.id]=\"'fc-edge-label-dragging'\">{{edgeDraggingService.edgeDragging.dragLabel}}</span>\n        }\n      </div>\n    </div>\n  }\n  @for (edge of model.edges; track edge) {\n    <div\n      (mousedown)=\"edgeMouseDown($event, edge)\"\n      (click)=\"edgeClick($event, edge)\"\n      (dblclick)=\"edgeDoubleClick($event, edge)\"\n      (mouseover)=\"edgeMouseOver($event, edge)\"\n      (mouseenter)=\"edgeMouseEnter($event, edge)\"\n      (mouseleave)=\"edgeMouseLeave($event, edge)\"\n      [class]=\"'fc-noselect ' + ((modelService.edges.isEdit(edge) && flowchartConstants.editClass + ' ' + flowchartConstants.edgeLabelClass) ||\n                        (modelService.edges.isSelected(edge) && flowchartConstants.selectedClass + ' ' + flowchartConstants.edgeLabelClass) ||\n                        edge === mouseoverService.mouseoverscope.edge && flowchartConstants.hoverClass + ' ' + flowchartConstants.edgeLabelClass ||\n                        edge.active && flowchartConstants.activeClass + ' ' + flowchartConstants.edgeLabelClass ||\n                        flowchartConstants.edgeLabelClass)\"\n      [style]=\"{\n        top: (edgeDrawingService.getEdgeCenter(modelService.edges.sourceCoord(edge), modelService.edges.destCoord(edge)).y)+'px',\n        left: (edgeDrawingService.getEdgeCenter(modelService.edges.sourceCoord(edge), modelService.edges.destCoord(edge)).x)+'px'\n      }\">\n      <div class=\"fc-edge-label-text\">\n        @if (modelService.isEditable()) {\n          <div class=\"fc-noselect fc-nodeedit\" (click)=\"edgeEdit($event, edge)\">\n            <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n          </div>\n        }\n        @if (modelService.isEditable()) {\n          <div class=\"fc-noselect fc-nodedelete\" (click)=\"edgeRemove($event, edge)\">\n            &times;\n          </div>\n        }\n        @if (edge.label) {\n          <span [attr.id]=\"'fc-edge-label-'+$index\">{{edge.label}}</span>\n        }\n      </div>\n    </div>\n  }\n  <div id=\"select-rectangle\" class=\"fc-select-rectangle\" hidden>\n  </div>\n</div>\n", styles: [":host{display:block;position:relative;width:100%;height:100%;background-size:25px 25px;background-image:linear-gradient(to right,rgba(0,0,0,.1) 1px,transparent 1px),linear-gradient(to bottom,rgba(0,0,0,.1) 1px,transparent 1px);background-color:transparent;min-width:100%;min-height:100%;-webkit-touch-callout:none;-webkit-user-select:none;-khtml-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}:host .fc-canvas-container{display:block;position:relative;width:100%;height:100%}:host .fc-canvas-container svg.fc-canvas-svg{display:block;position:relative;width:100%;height:100%}:host .fc-edge{stroke:gray;stroke-width:4;transition:stroke-width .2s;fill:transparent}:host .fc-edge.fc-hover{stroke:gray;stroke-width:6;fill:transparent}:host .fc-edge.fc-selected{stroke:red;stroke-width:4;fill:transparent}:host .fc-edge.fc-active{animation:dash 3s linear infinite;stroke-dasharray:20}:host .fc-edge.fc-dragging{pointer-events:none}:host .fc-arrow-marker polygon{stroke:gray;fill:gray}:host .fc-arrow-marker-selected polygon{stroke:red;fill:red}:host .edge-endpoint{fill:gray}:host .fc-noselect{-webkit-touch-callout:none;-webkit-user-select:none;-khtml-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}:host .fc-edge-label{position:absolute;opacity:.8;transition:transform .2s;transform-origin:bottom left;margin:0 auto}:host .fc-edge-label .fc-edge-label-text{position:absolute;-webkit-transform:translate(-50%,-50%);transform:translate(-50%,-50%);white-space:nowrap;text-align:center;font-size:16px}:host .fc-edge-label .fc-edge-label-text span{cursor:default;border:solid #ff3d00;border-radius:10px;color:#ff3d00;background-color:#fff;padding:3px 5px}:host .fc-edge-label .fc-nodeedit{top:-30px;right:14px}:host .fc-edge-label .fc-nodedelete{top:-30px;right:-13px}:host .fc-edge-label.fc-hover{transform:scale(1.25)}:host .fc-edge-label.fc-selected .fc-edge-label-text span,:host .fc-edge-label.fc-edit .fc-edge-label-text span{border:solid red;color:#fff;font-weight:600;background-color:red}:host .fc-select-rectangle{border:2px dashed #5262ff;position:absolute;background:#147dff1a;z-index:2}@keyframes dash{0%{stroke-dashoffset:500}}:host ::ng-deep .fc-nodeedit{display:none;font-size:15px}:host ::ng-deep .fc-nodedelete{display:none;font-size:18px}:host ::ng-deep .fc-edit .fc-nodeedit,:host ::ng-deep .fc-edit .fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer}:host ::ng-deep .fc-edit .fc-nodeedit{top:-24px;right:16px}:host ::ng-deep .fc-edit .fc-nodedelete{top:-24px;right:-13px}\n"] }]
+            args: [{ selector: 'fc-canvas', changeDetection: ChangeDetectionStrategy.OnPush, standalone: false, template: "<div (click)=\"canvasClick($event)\" class=\"fc-canvas-container\">\n  @for (note of (model.notes || []); track note) {\n    <fc-note\n      [note]=\"note\"\n      [selected]=\"modelService.notes.isSelected(note)\"\n      [edit]=\"modelService.notes.isEdit(note)\"\n      [modelservice]=\"modelService\"\n      [noteDraggingService]=\"noteDraggingService\"\n      [userNoteCallbacks]=\"userNoteCallbacks\">\n    </fc-note>\n  }\n  <svg class=\"fc-canvas-svg\">\n    <defs>\n      <marker class=\"fc-arrow-marker\" [id]=\"arrowDefId\" markerWidth=\"5\" markerHeight=\"5\" viewBox=\"-6 -6 12 12\" refX=\"10\" refY=\"0\" markerUnits=\"strokeWidth\" orient=\"auto\">\n        <polygon points=\"-2,0 -5,5 5,0 -5,-5\" stroke=\"gray\" fill=\"gray\" stroke-width=\"1px\"/>\n      </marker>\n      <marker class=\"fc-arrow-marker-selected\" [id]=\"arrowDefIdSelected\" markerWidth=\"5\" markerHeight=\"5\" viewBox=\"-6 -6 12 12\" refX=\"10\" refY=\"0\" markerUnits=\"strokeWidth\" orient=\"auto\">\n        <polygon points=\"-2,0 -5,5 5,0 -5,-5\" stroke=\"red\" fill=\"red\" stroke-width=\"1px\"/>\n      </marker>\n    </defs>\n    @for (edge of model.edges; track edge) {\n      <g>\n        <path\n          [id]=\"'fc-edge-path-'+$index\"\n          (mousedown)=\"edgeMouseDown($event, edge)\"\n          (click)=\"edgeClick($event, edge)\"\n          (dblclick)=\"edgeDoubleClick($event, edge)\"\n          (mouseover)=\"edgeMouseOver($event, edge)\"\n          (mouseenter)=\"edgeMouseEnter($event, edge)\"\n          (mouseleave)=\"edgeMouseLeave($event, edge)\"\n        [class]=\"(modelService.edges.isSelected(edge) && flowchartConstants.selectedClass + ' ' + flowchartConstants.edgeClass) ||\n                      edge === mouseoverService.mouseoverscope.edge && flowchartConstants.hoverClass + ' ' + flowchartConstants.edgeClass ||\n                      edge.active && flowchartConstants.activeClass + ' ' + flowchartConstants.edgeClass ||\n                      flowchartConstants.edgeClass\"\n          [attr.d]=\"getEdgeDAttribute(edge)\"\n          [attr.marker-end]=\"'url(#' + (modelService.edges.isSelected(edge) ? arrowDefIdSelected : arrowDefId) + ')'\">\n        </path>\n      </g>\n    }\n    @if (dragAnimation === flowchartConstants.dragAnimationRepaint && edgeDraggingService.edgeDragging.isDragging) {\n      <g>\n        <path [class]=\"flowchartConstants.edgeClass + ' ' + flowchartConstants.draggingClass\"\n        [attr.d]=\"edgeDrawingService.getEdgeDAttribute(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2, edgeStyle)\"></path>\n        <circle class=\"edge-endpoint\" r=\"4\"\n          [attr.cx]=\"edgeDraggingService.edgeDragging.dragPoint2.x\"\n          [attr.cy]=\"edgeDraggingService.edgeDragging.dragPoint2.y\">\n        </circle>\n      </g>\n    }\n    @if (dragAnimation === flowchartConstants.dragAnimationShadow) {\n      <g\n        class=\"shadow-svg-class {{ flowchartConstants.edgeClass }} {{ flowchartConstants.draggingClass }}\"\n        style=\"display:none\">\n        <path d=\"\"></path>\n        <circle class=\"edge-endpoint\" r=\"4\"></circle>\n      </g>\n    }\n  </svg>\n  @for (node of model.nodes; track node) {\n    <fc-node\n      [selected]=\"modelService.nodes.isSelected(node)\"\n      [edit]=\"modelService.nodes.isEdit(node)\"\n      [underMouse]=\"node === mouseoverService.mouseoverscope.node\"\n      [node]=\"node\"\n      [mouseOverConnector]=\"mouseoverService.mouseoverscope.connector\"\n      [modelservice]=\"modelService\"\n      [dragging]=\"nodeDraggingService.isDraggingNode(node)\"\n      [callbacks]=\"callbacks\"\n      [userNodeCallbacks]=\"userNodeCallbacks\">\n    </fc-node>\n  }\n  @if (dragAnimation === flowchartConstants.dragAnimationRepaint && edgeDraggingService.edgeDragging.isDragging) {\n    <div\n      [class]=\"'fc-noselect ' + flowchartConstants.edgeLabelClass\"\n      [style]=\"{\n        top: (edgeDrawingService.getEdgeCenter(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2).y)+'px',\n        left: (edgeDrawingService.getEdgeCenter(edgeDraggingService.edgeDragging.dragPoint1, edgeDraggingService.edgeDragging.dragPoint2).x)+'px'\n      }\">\n      <div class=\"fc-edge-label-text\">\n        @if (edgeDraggingService.edgeDragging.dragLabel) {\n          <span [attr.id]=\"'fc-edge-label-dragging'\">{{edgeDraggingService.edgeDragging.dragLabel}}</span>\n        }\n      </div>\n    </div>\n  }\n  @for (edge of model.edges; track edge) {\n    <div\n      (mousedown)=\"edgeMouseDown($event, edge)\"\n      (click)=\"edgeClick($event, edge)\"\n      (dblclick)=\"edgeDoubleClick($event, edge)\"\n      (mouseover)=\"edgeMouseOver($event, edge)\"\n      (mouseenter)=\"edgeMouseEnter($event, edge)\"\n      (mouseleave)=\"edgeMouseLeave($event, edge)\"\n      [class]=\"'fc-noselect ' + ((modelService.edges.isEdit(edge) && flowchartConstants.editClass + ' ' + flowchartConstants.edgeLabelClass) ||\n                        (modelService.edges.isSelected(edge) && flowchartConstants.selectedClass + ' ' + flowchartConstants.edgeLabelClass) ||\n                        edge === mouseoverService.mouseoverscope.edge && flowchartConstants.hoverClass + ' ' + flowchartConstants.edgeLabelClass ||\n                        edge.active && flowchartConstants.activeClass + ' ' + flowchartConstants.edgeLabelClass ||\n                        flowchartConstants.edgeLabelClass)\"\n      [style]=\"{\n        top: (edgeDrawingService.getEdgeCenter(modelService.edges.sourceCoord(edge), modelService.edges.destCoord(edge)).y)+'px',\n        left: (edgeDrawingService.getEdgeCenter(modelService.edges.sourceCoord(edge), modelService.edges.destCoord(edge)).x)+'px'\n      }\">\n      <div class=\"fc-edge-label-text\">\n        @if (modelService.isEditable()) {\n          <div class=\"fc-noselect fc-nodeedit\" (click)=\"edgeEdit($event, edge)\">\n            <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n          </div>\n        }\n        @if (modelService.isEditable()) {\n          <div class=\"fc-noselect fc-nodedelete\" (click)=\"edgeRemove($event, edge)\">\n            &times;\n          </div>\n        }\n        @if (edge.label) {\n          <span [attr.id]=\"'fc-edge-label-'+$index\">{{edge.label}}</span>\n        }\n      </div>\n    </div>\n  }\n  <div id=\"select-rectangle\" class=\"fc-select-rectangle\" hidden>\n  </div>\n</div>\n", styles: [":host{display:block;position:relative;width:100%;height:100%;background-size:25px 25px;background-image:linear-gradient(to right,rgba(0,0,0,.1) 1px,transparent 1px),linear-gradient(to bottom,rgba(0,0,0,.1) 1px,transparent 1px);background-color:transparent;min-width:100%;min-height:100%;-webkit-touch-callout:none;-webkit-user-select:none;-khtml-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}:host .fc-canvas-container{display:block;position:relative;width:100%;height:100%}:host .fc-canvas-container svg.fc-canvas-svg{display:block;position:relative;width:100%;height:100%}:host .fc-edge{stroke:gray;stroke-width:4;transition:stroke-width .2s;fill:transparent}:host .fc-edge.fc-hover{stroke:gray;stroke-width:6;fill:transparent}:host .fc-edge.fc-selected{stroke:red;stroke-width:4;fill:transparent}:host .fc-edge.fc-active{animation:dash 3s linear infinite;stroke-dasharray:20}:host .fc-edge.fc-dragging{pointer-events:none}:host .fc-arrow-marker polygon{stroke:gray;fill:gray}:host .fc-arrow-marker-selected polygon{stroke:red;fill:red}:host .edge-endpoint{fill:gray}:host .fc-noselect{-webkit-touch-callout:none;-webkit-user-select:none;-khtml-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}:host .fc-edge-label{position:absolute;opacity:.8;transition:transform .2s;transform-origin:bottom left;margin:0 auto}:host .fc-edge-label .fc-edge-label-text{position:absolute;-webkit-transform:translate(-50%,-50%);transform:translate(-50%,-50%);white-space:nowrap;text-align:center;font-size:16px}:host .fc-edge-label .fc-edge-label-text span{cursor:default;border:solid #ff3d00;border-radius:10px;color:#ff3d00;background-color:#fff;padding:3px 5px}:host .fc-edge-label .fc-nodeedit{top:-30px;right:14px}:host .fc-edge-label .fc-nodedelete{top:-30px;right:-13px}:host .fc-edge-label.fc-hover{transform:scale(1.25)}:host .fc-edge-label.fc-selected .fc-edge-label-text span,:host .fc-edge-label.fc-edit .fc-edge-label-text span{border:solid red;color:#fff;font-weight:600;background-color:red}:host .fc-select-rectangle{border:2px dashed #5262ff;position:absolute;background:#147dff1a;z-index:2}@keyframes dash{0%{stroke-dashoffset:500}}:host ::ng-deep .fc-nodeedit{display:none;font-size:15px}:host ::ng-deep .fc-nodedelete{display:none;font-size:18px}:host ::ng-deep .fc-edit .fc-nodeedit,:host ::ng-deep .fc-edit .fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer}:host ::ng-deep .fc-edit .fc-nodeedit{top:-24px;right:16px}:host ::ng-deep .fc-edit .fc-nodedelete{top:-24px;right:-13px}\n"] }]
         }], ctorParameters: () => [{ type: i0.ElementRef }, { type: i0.IterableDiffers }, { type: FcModelValidationService }, { type: FcEdgeDrawingService }, { type: i0.ChangeDetectorRef }, { type: i0.NgZone }], propDecorators: { canvasClass: [{
                 type: HostBinding,
                 args: ['attr.class']
@@ -1907,16 +2299,32 @@ i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImpo
             args: [{ selector: 'fc-default-node', standalone: false, template: "<div\n  (dblclick)=\"userNodeCallbacks.doubleClick($event, node)\">\n  <div class=\"{{flowchartConstants.nodeOverlayClass}}\"></div>\n  <div class=\"innerNode\">\n    <p>{{ node.name }}</p>\n\n    <div class=\"{{flowchartConstants.leftConnectorClass}}\">\n      @for (connector of modelservice.nodes.getConnectorsByType(node, flowchartConstants.leftConnectorType); track connector) {\n        <div fc-magnet [connector]=\"connector\" [callbacks]=\"callbacks\">\n          <div fc-connector [connector]=\"connector\"\n            [nodeRectInfo]=\"nodeRectInfo\"\n            [mouseOverConnector]=\"mouseOverConnector\"\n            [callbacks]=\"callbacks\"\n          [modelservice]=\"modelservice\"></div>\n        </div>\n      }\n    </div>\n    <div class=\"{{flowchartConstants.rightConnectorClass}}\">\n      @for (connector of modelservice.nodes.getConnectorsByType(node, flowchartConstants.rightConnectorType); track connector) {\n        <div fc-magnet [connector]=\"connector\" [callbacks]=\"callbacks\">\n          <div fc-connector [connector]=\"connector\"\n            [nodeRectInfo]=\"nodeRectInfo\"\n            [mouseOverConnector]=\"mouseOverConnector\"\n            [callbacks]=\"callbacks\"\n          [modelservice]=\"modelservice\"></div>\n        </div>\n      }\n    </div>\n  </div>\n  @if (modelservice.isEditable() && !node.readonly) {\n    <div class=\"fc-nodeedit\" (click)=\"userNodeCallbacks.nodeEdit($event, node)\">\n      <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n    </div>\n  }\n  @if (modelservice.isEditable() && !node.readonly) {\n    <div class=\"fc-nodedelete\" (click)=\"modelservice.nodes.delete(node)\">\n      &times;\n    </div>\n  }\n</div>\n", styles: [":host .fc-node-overlay{position:absolute;pointer-events:none;inset:0;background-color:#000;opacity:0}:host :host-context(.fc-hover) .fc-node-overlay{opacity:.25;transition:opacity .2s}:host :host-context(.fc-selected) .fc-node-overlay{opacity:.25}:host .innerNode{display:flex;justify-content:center;align-items:center;min-width:100px;border-radius:5px;background-color:#f15b26;color:#fff;font-size:16px;pointer-events:none}:host .innerNode p{padding:0 15px;text-align:center}\n"] }]
         }], ctorParameters: () => [] });
 
+class DefaultFcNoteComponent extends FcNoteComponent {
+    constructor() {
+        super();
+    }
+    static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: DefaultFcNoteComponent, deps: [], target: i0.ɵɵFactoryTarget.Component }); }
+    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "17.0.0", version: "20.3.16", type: DefaultFcNoteComponent, isStandalone: false, selector: "fc-default-note", usesInheritance: true, ngImport: i0, template: "<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note['content'] || '' }}</div>\n  @if (modelservice.isEditable() && !note.readonly) {\n    <div class=\"fc-nodeedit\" (click)=\"userNoteCallbacks.noteEdit($event, note)\">\n      <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n    </div>\n  }\n  @if (modelservice.isEditable() && !note.readonly) {\n    <div class=\"fc-nodedelete\" (click)=\"modelservice.notes.delete(note)\">\n      &times;\n    </div>\n  }\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}.fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}.fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}.fc-default-note-content .fc-nodeedit,.fc-default-note-content .fc-nodedelete{position:absolute;top:4px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#666;background:#ffffffb3;border-radius:2px}.fc-default-note-content .fc-nodeedit:hover,.fc-default-note-content .fc-nodedelete:hover{color:#333;background:#fffffff2}.fc-default-note-content .fc-nodeedit{right:28px}.fc-default-note-content .fc-nodedelete{right:4px;font-size:18px;font-weight:700;color:#999}\n"] }); }
+}
+i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: DefaultFcNoteComponent, decorators: [{
+            type: Component,
+            args: [{ selector: 'fc-default-note', standalone: false, template: "<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note['content'] || '' }}</div>\n  @if (modelservice.isEditable() && !note.readonly) {\n    <div class=\"fc-nodeedit\" (click)=\"userNoteCallbacks.noteEdit($event, note)\">\n      <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n    </div>\n  }\n  @if (modelservice.isEditable() && !note.readonly) {\n    <div class=\"fc-nodedelete\" (click)=\"modelservice.notes.delete(note)\">\n      &times;\n    </div>\n  }\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}.fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}.fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}.fc-default-note-content .fc-nodeedit,.fc-default-note-content .fc-nodedelete{position:absolute;top:4px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:#666;background:#ffffffb3;border-radius:2px}.fc-default-note-content .fc-nodeedit:hover,.fc-default-note-content .fc-nodedelete:hover{color:#333;background:#fffffff2}.fc-default-note-content .fc-nodeedit{right:28px}.fc-default-note-content .fc-nodedelete{right:4px;font-size:18px;font-weight:700;color:#999}\n"] }]
+        }], ctorParameters: () => [] });
+
 class NgxFlowchartModule {
     static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: NgxFlowchartModule, deps: [], target: i0.ɵɵFactoryTarget.NgModule }); }
     static { this.ɵmod = i0.ɵɵngDeclareNgModule({ minVersion: "14.0.0", version: "20.3.16", ngImport: i0, type: NgxFlowchartModule, declarations: [NgxFlowchartComponent,
             FcMagnetDirective,
             FcConnectorDirective,
             FcNodeContainerComponent,
-            DefaultFcNodeComponent], imports: [CommonModule], exports: [NgxFlowchartComponent,
+            DefaultFcNodeComponent,
+            FcNoteContainerComponent,
+            DefaultFcNoteComponent], imports: [CommonModule], exports: [NgxFlowchartComponent,
             FcMagnetDirective,
             FcConnectorDirective,
-            DefaultFcNodeComponent] }); }
+            DefaultFcNodeComponent,
+            FcNoteContainerComponent,
+            DefaultFcNoteComponent] }); }
     static { this.ɵinj = i0.ɵɵngDeclareInjector({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: NgxFlowchartModule, providers: [
             FcModelValidationService,
             FcEdgeDrawingService,
@@ -1925,17 +2333,27 @@ class NgxFlowchartModule {
                 useValue: {
                     nodeComponentType: DefaultFcNodeComponent
                 }
+            },
+            {
+                provide: FC_NOTE_COMPONENT_CONFIG,
+                useValue: {
+                    noteComponentType: DefaultFcNoteComponent
+                }
             }
         ], imports: [CommonModule] }); }
 }
 i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: NgxFlowchartModule, decorators: [{
             type: NgModule,
             args: [{
-                    declarations: [NgxFlowchartComponent,
+                    declarations: [
+                        NgxFlowchartComponent,
                         FcMagnetDirective,
                         FcConnectorDirective,
                         FcNodeContainerComponent,
-                        DefaultFcNodeComponent],
+                        DefaultFcNodeComponent,
+                        FcNoteContainerComponent,
+                        DefaultFcNoteComponent
+                    ],
                     providers: [
                         FcModelValidationService,
                         FcEdgeDrawingService,
@@ -1944,15 +2362,25 @@ i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImpo
                             useValue: {
                                 nodeComponentType: DefaultFcNodeComponent
                             }
+                        },
+                        {
+                            provide: FC_NOTE_COMPONENT_CONFIG,
+                            useValue: {
+                                noteComponentType: DefaultFcNoteComponent
+                            }
                         }
                     ],
                     imports: [
                         CommonModule
                     ],
-                    exports: [NgxFlowchartComponent,
+                    exports: [
+                        NgxFlowchartComponent,
                         FcMagnetDirective,
                         FcConnectorDirective,
-                        DefaultFcNodeComponent]
+                        DefaultFcNodeComponent,
+                        FcNoteContainerComponent,
+                        DefaultFcNoteComponent
+                    ]
                 }]
         }] });
 
@@ -1964,5 +2392,5 @@ i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImpo
  * Generated bundle index. Do not edit.
  */
 
-export { DefaultFcNodeComponent, FC_NODE_COMPONENT_CONFIG, FcConnectorDirective, FcMagnetDirective, FcNodeComponent, FlowchartConstants, ModelvalidationError, NgxFlowchartComponent, NgxFlowchartModule, fcTopSort };
+export { DefaultFcNodeComponent, DefaultFcNoteComponent, FC_NODE_COMPONENT_CONFIG, FC_NOTE_COMPONENT_CONFIG, FcConnectorDirective, FcMagnetDirective, FcNodeComponent, FcNoteComponent, FcNoteContainerComponent, FcNoteDraggingService, FlowchartConstants, ModelvalidationError, NgxFlowchartComponent, NgxFlowchartModule, NoteDragMode, fcTopSort };
 //# sourceMappingURL=ngx-flowchart.mjs.map

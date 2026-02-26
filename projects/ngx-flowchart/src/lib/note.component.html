@@ -1,0 +1,10 @@
+<ng-template #noteContent></ng-template>
+<div class="fc-note-resize-handle fc-note-resize-s"
+     (mousedown)="startResize($event, noteDragMode.ResizeS)">
+</div>
+<div class="fc-note-resize-handle fc-note-resize-e"
+     (mousedown)="startResize($event, noteDragMode.ResizeE)">
+</div>
+<div class="fc-note-resize-handle fc-note-resize-se"
+     (mousedown)="startResize($event, noteDragMode.ResizeSE)">
+</div>

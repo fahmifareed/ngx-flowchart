@@ -7,6 +7,7 @@ import {
   FcItemInfo,
   FcModel,
   FcNode,
+  FcNote,
   FcRectBox,
   FlowchartConstants
 } from './ngx-flowchart.models';
@@ -263,6 +264,43 @@ class EdgesModel extends AbstractFcModel<FcEdge> {
     );
   }
 }
+class NotesModel extends AbstractFcModel<FcNote> {
+
+  constructor(modelService: FcModelService) {
+    super(modelService);
+  }
+
+  public delete(note: FcNote) {
+    if (this.isSelected(note)) {
+      this.deselect(note);
+    }
+    const model = this.modelService.model;
+    if (!model.notes) { return; }
+    const index = model.notes.indexOf(note);
+    if (index === -1) {
+      throw new Error('Tried to delete not existing note');
+    }
+    model.notes.splice(index, 1);
+    this.modelService.notifyModelChanged();
+    this.modelService.noteRemovedCallback(note);
+  }
+
+  public getSelectedNotes(): Array<FcNote> {
+    const model = this.modelService.model;
+    if (!model.notes) { return []; }
+    return model.notes.filter((note) => this.isSelected(note));
+  }
+
+  public handleClicked(note: FcNote, ctrlKey?: boolean) {
+    if (ctrlKey) {
+      this.toggleSelected(note);
+    } else {
+      this.modelService.deselectAll();
+      this.select(note);
+    }
+  }
+}
+
 export class FcModelService {
 
   modelValidation: FcModelValidationService;
@@ -281,6 +319,7 @@ export class FcModelService {
   edgeAddedCallback: (edge: FcEdge) => void;
   nodeRemovedCallback: (node: FcNode) => void;
   edgeRemovedCallback: (edge: FcEdge) => void;
+  noteRemovedCallback: (note: FcNote) => void;
 
   dropTargetId: string;
 
@@ -290,6 +329,7 @@ export class FcModelService {
   connectors: ConnectorsModel;
   nodes: NodesModel;
   edges: EdgesModel;
+  notes: NotesModel;
 
   constructor(modelValidation: FcModelValidationService,
               model: FcModel,
@@ -302,7 +342,8 @@ export class FcModelService {
               nodeRemovedCallback: (node: FcNode) => void,
               edgeRemovedCallback: (edge: FcEdge) => void,
               canvasHtmlElement: HTMLElement,
-              svgHtmlElement: SVGElement) {
+              svgHtmlElement: SVGElement,
+              noteRemovedCallback?: (note: FcNote) => void) {
 
     this.modelValidation = modelValidation;
     this.model = model;
@@ -318,10 +359,12 @@ export class FcModelService {
     this.edgeAddedCallback = edgeAddedCallback || (() => {});
     this.nodeRemovedCallback = nodeRemovedCallback || (() => {});
     this.edgeRemovedCallback = edgeRemovedCallback || (() => {});
+    this.noteRemovedCallback = noteRemovedCallback || (() => {});
 
     this.connectors = new ConnectorsModel(this);
     this.nodes = new NodesModel(this);
     this.edges = new EdgesModel(this);
+    this.notes = new NotesModel(this);
 
     this.debouncer
       .pipe(debounceTime(100))
@@ -377,6 +420,13 @@ export class FcModelService {
     this.model.edges.forEach(edge => {
       this.edges.select(edge);
     });
+    if (this.model.notes) {
+      this.model.notes.forEach(note => {
+        if (!note.readonly) {
+          this.notes.select(note);
+        }
+      });
+    }
     this.detectChanges();
   }
 
@@ -398,8 +448,23 @@ export class FcModelService {
   public getItemInfoAtPoint(x: number, y: number): FcItemInfo {
     return {
       node: this.getNodeAtPoint(x, y),
-      edge: this.getEdgeAtPoint(x, y)
+      edge: this.getEdgeAtPoint(x, y),
+      note: this.getNoteAtPoint(x, y)
     };
+  }
+
+  public getNoteAtPoint(x: number, y: number): FcNote {
+    if (!this.model.notes) { return null; }
+    for (const note of this.model.notes) {
+      const canvasBox = this.canvasHtmlElement.getBoundingClientRect();
+      const noteLeft = canvasBox.left + note.x;
+      const noteTop = canvasBox.top + note.y;
+      if (x >= noteLeft && x <= noteLeft + note.width &&
+          y >= noteTop && y <= noteTop + note.height) {
+        return note;
+      }
+    }
+    return null;
   }
 
   public getNodeAtPoint(x: number, y: number): FcNode {
@@ -461,6 +526,21 @@ export class FcModelService {
         }
       }
     });
+    if (this.model.notes) {
+      this.model.notes.forEach((value) => {
+        if (!value.readonly) {
+          const x = canvasElementBox.left + value.x + value.width / 2;
+          const y = canvasElementBox.top + value.y + value.height / 2;
+          if (this.inRectBox(x, y, rectBox)) {
+            this.notes.select(value);
+          } else {
+            if (this.notes.isSelected(value)) {
+              this.notes.deselect(value);
+            }
+          }
+        }
+      });
+    }
   }
 
   public deleteSelected() {
@@ -471,6 +551,10 @@ export class FcModelService {
     const nodesToDelete = this.nodes.getSelectedNodes();
     nodesToDelete.forEach((node) => {
       this.nodes.delete(node);
+    });
+    const notesToDelete = this.notes.getSelectedNotes();
+    notesToDelete.forEach((note) => {
+      this.notes.delete(note);
     });
   }
 

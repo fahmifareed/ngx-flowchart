@@ -1,9 +1,9 @@
 {
   "name": "ngx-flowchart-demo",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve --host 0.0.0.0 --open --port 4300",
+    "start": "ng serve --host 0.0.0.0 --open --port 4300 --configuration development",
     "build": "ng build ngx-flowchart --configuration production",
     "lint": "ng lint"
   },

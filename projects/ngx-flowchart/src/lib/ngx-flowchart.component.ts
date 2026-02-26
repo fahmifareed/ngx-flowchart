@@ -14,10 +14,21 @@ import {
   OnInit,
   Output
 } from '@angular/core';
-import { FcCallbacks, FcEdge, FcModel, FcNode, FlowchartConstants, UserCallbacks, UserNodeCallbacks } from './ngx-flowchart.models';
+import {
+  FcCallbacks,
+  FcEdge,
+  FcModel,
+  FcNode,
+  FcNote,
+  FlowchartConstants,
+  UserCallbacks,
+  UserNodeCallbacks,
+  UserNoteCallbacks
+} from './ngx-flowchart.models';
 import { FcModelService } from './model.service';
 import { FcModelValidationService } from './modelvalidation.service';
 import { FcNodeDraggingService } from './node-dragging.service';
+import { FcNoteDraggingService } from './note-dragging.service';
 import { FcEdgeDrawingService } from './edge-drawing.service';
 import { FcEdgeDraggingService } from './edge-dragging.service';
 import { FcMouseOverService } from './mouseover.service';
@@ -82,9 +93,11 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
   callbacks: FcCallbacks;
 
   userNodeCallbacks: UserNodeCallbacks;
+  userNoteCallbacks: UserNoteCallbacks;
 
   modelService: FcModelService;
   nodeDraggingService: FcNodeDraggingService;
+  noteDraggingService: FcNoteDraggingService;
   edgeDraggingService: FcEdgeDraggingService;
   mouseoverService: FcMouseOverService;
   rectangleSelectService: FcRectangleSelectService;
@@ -97,6 +110,8 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
   private nodesDiffer: IterableDiffer<FcNode> = this.differs.find([]).create<FcNode>((_index, item) => item);
 
   private edgesDiffer: IterableDiffer<FcEdge> = this.differs.find([]).create<FcEdge>((_index, item) => item);
+
+  private notesDiffer: IterableDiffer<FcNote> = this.differs.find([]).create<FcNote>((_index, item) => item);
 
   private readonly detectChangesSubject = new Subject<any>();
 
@@ -125,19 +140,20 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
 
     for (const key of Object.keys(this.userCallbacks)) {
       const callback = this.userCallbacks[key];
-      if (typeof callback !== 'function' && key !== 'nodeCallbacks') {
+      if (typeof callback !== 'function' && key !== 'nodeCallbacks' && key !== 'noteCallbacks') {
         throw new Error('All callbacks should be functions.');
       }
     }
 
     this.userNodeCallbacks = this.userCallbacks.nodeCallbacks;
+    this.userNoteCallbacks = this.userCallbacks.noteCallbacks || {};
 
     const element = $(this.elementRef.nativeElement);
 
     this.modelService = new FcModelService(this.modelValidation, this.model, this.modelChanged,
       this.detectChangesSubject, this.selectedObjects,
       this.userCallbacks.dropNode, this.userCallbacks.createEdge, this.userCallbacks.edgeAdded, this.userCallbacks.nodeRemoved,
-      this.userCallbacks.edgeRemoved, element[0], element[0].querySelector('svg'));
+      this.userCallbacks.edgeRemoved, element[0], element[0].querySelector('svg'), this.userCallbacks.noteRemoved);
 
     if (this.dropTargetId) {
       this.modelService.dropTargetId = this.dropTargetId;
@@ -147,6 +163,8 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
 
     this.nodeDraggingService = new FcNodeDraggingService(this.modelService, applyFunction,
           this.automaticResize, this.dragAnimation);
+
+    this.noteDraggingService = new FcNoteDraggingService(this.modelService, applyFunction);
 
     this.edgeDraggingService = new FcEdgeDraggingService(this.modelValidation, this.edgeDrawingService, this.modelService,
       this.model, this.userCallbacks.isValidEdge || null, applyFunction,
@@ -183,8 +201,10 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
     if (this.model) {
       const nodesChange = this.nodesDiffer.diff(this.model.nodes);
       const edgesChange = this.edgesDiffer.diff(this.model.edges);
+      const notesChange = this.notesDiffer.diff(this.model.notes || []);
       let nodesChanged = false;
       let edgesChanged = false;
+      let notesChanged = false;
       if (nodesChange !== null) {
         nodesChange.forEachAddedItem(() => {
           nodesChanged = true;
@@ -201,10 +221,18 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
           edgesChanged = true;
         });
       }
+      if (notesChange !== null) {
+        notesChange.forEachAddedItem(() => {
+          notesChanged = true;
+        });
+        notesChange.forEachRemovedItem(() => {
+          notesChanged = true;
+        });
+      }
       if (nodesChanged) {
         this.adjustCanvasSize(this.fitModelSizeByDefault);
       }
-      if (nodesChanged || edgesChanged) {
+      if (nodesChanged || edgesChanged || notesChanged) {
         this.detectChangesSubject.next(null);
       }
     }
