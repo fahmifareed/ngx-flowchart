@@ -1,4 +1,4 @@
-@if (modelservice.isEditable() && !note.readonly && (selected || edit)) {
+@if (modelservice.isEditable() && !note.readonly && edit) {
   <div class="fc-noselect fc-nodeedit"
        (mousedown)="$event.stopPropagation()"
        (click)="noteEdit($event)">

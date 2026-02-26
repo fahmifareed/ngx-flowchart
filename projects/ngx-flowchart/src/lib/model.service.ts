@@ -467,6 +467,43 @@ export class FcModelService {
     return null;
   }
 
+  public getNodesInNoteBounds(note: FcNote): FcNode[] {
+    const canvasBox = this.canvasHtmlElement.getBoundingClientRect();
+    const noteLeft = canvasBox.left + note.x;
+    const noteTop = canvasBox.top + note.y;
+    const noteRight = noteLeft + note.width;
+    const noteBottom = noteTop + note.height;
+    const result: FcNode[] = [];
+    for (const node of this.model.nodes) {
+      if (node.readonly) { continue; }
+      const element = this.nodes.getHtmlElement(node.id);
+      if (!element) { continue; }
+      const nodeBox = element.getBoundingClientRect();
+      const nodeCenterX = nodeBox.left + nodeBox.width / 2;
+      const nodeCenterY = nodeBox.top + nodeBox.height / 2;
+      if (nodeCenterX >= noteLeft && nodeCenterX <= noteRight &&
+          nodeCenterY >= noteTop && nodeCenterY <= noteBottom) {
+        result.push(node);
+      }
+    }
+    return result;
+  }
+
+  public getNotesInNoteBounds(note: FcNote): FcNote[] {
+    if (!this.model.notes) { return []; }
+    const result: FcNote[] = [];
+    for (const other of this.model.notes) {
+      if (other === note || other.readonly) { continue; }
+      const centerX = other.x + other.width / 2;
+      const centerY = other.y + other.height / 2;
+      if (centerX >= note.x && centerX <= note.x + note.width &&
+          centerY >= note.y && centerY <= note.y + note.height) {
+        result.push(other);
+      }
+    }
+    return result;
+  }
+
   public getNodeAtPoint(x: number, y: number): FcNode {
     for (const node of this.model.nodes) {
       const element = this.nodes.getHtmlElement(node.id);

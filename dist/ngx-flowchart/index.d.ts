@@ -105,6 +105,8 @@ declare class FcModelService {
     private inRectBox;
     getItemInfoAtPoint(x: number, y: number): FcItemInfo;
     getNoteAtPoint(x: number, y: number): FcNote;
+    getNodesInNoteBounds(note: FcNote): FcNode[];
+    getNotesInNoteBounds(note: FcNote): FcNote[];
     getNodeAtPoint(x: number, y: number): FcNode;
     getEdgeAtPoint(x: number, y: number): FcEdge;
     selectAllInRect(rectBox: FcRectBox): void;
@@ -194,6 +196,7 @@ declare abstract class FcNodeComponent implements OnInit {
 
 declare enum NoteDragMode {
     None = "none",
+    Pending = "pending",// mousedown recorded, waiting for drag threshold
     Move = "move",
     ResizeSE = "resize-se",
     ResizeS = "resize-s",
@@ -208,6 +211,7 @@ declare class FcNoteDraggingService {
     constructor(modelService: FcModelService, applyFunction: <T>(fn: (...args: any[]) => T) => T);
     isDraggingNote(note: FcNote): boolean;
     startMove(event: MouseEvent, note: FcNote): void;
+    private commitMove;
     startResize(event: MouseEvent, note: FcNote, mode: NoteDragMode): void;
     private mousemove;
     private mouseup;
@@ -223,6 +227,7 @@ declare class FcNoteContainerComponent implements OnInit, AfterViewInit, OnChang
     userNoteCallbacks: UserNoteCallbacks;
     selected: boolean;
     edit: boolean;
+    dragging: boolean;
     noteComponent: FcNoteComponent;
     noteContentContainer: ViewContainerRef;
     get noteId(): string;
@@ -244,7 +249,7 @@ declare class FcNoteContainerComponent implements OnInit, AfterViewInit, OnChang
     startResize(event: MouseEvent, mode: NoteDragMode): void;
     get noteDragMode(): typeof NoteDragMode;
     static ɵfac: i0.ɵɵFactoryDeclaration<FcNoteContainerComponent, never>;
-    static ɵcmp: i0.ɵɵComponentDeclaration<FcNoteContainerComponent, "fc-note", never, { "note": { "alias": "note"; "required": false; }; "modelservice": { "alias": "modelservice"; "required": false; }; "noteDraggingService": { "alias": "noteDraggingService"; "required": false; }; "userNoteCallbacks": { "alias": "userNoteCallbacks"; "required": false; }; "selected": { "alias": "selected"; "required": false; }; "edit": { "alias": "edit"; "required": false; }; }, {}, never, never, false, never>;
+    static ɵcmp: i0.ɵɵComponentDeclaration<FcNoteContainerComponent, "fc-note", never, { "note": { "alias": "note"; "required": false; }; "modelservice": { "alias": "modelservice"; "required": false; }; "noteDraggingService": { "alias": "noteDraggingService"; "required": false; }; "userNoteCallbacks": { "alias": "userNoteCallbacks"; "required": false; }; "selected": { "alias": "selected"; "required": false; }; "edit": { "alias": "edit"; "required": false; }; "dragging": { "alias": "dragging"; "required": false; }; }, {}, never, never, false, never>;
 }
 declare abstract class FcNoteComponent implements OnInit {
     note: FcNote;
@@ -667,6 +672,8 @@ declare class DefaultFcNodeComponent extends FcNodeComponent {
 
 declare class DefaultFcNoteComponent extends FcNoteComponent {
     constructor();
+    noteEdit(event: MouseEvent): void;
+    noteDelete(event: MouseEvent): void;
     static ɵfac: i0.ɵɵFactoryDeclaration<DefaultFcNoteComponent, never>;
     static ɵcmp: i0.ɵɵComponentDeclaration<DefaultFcNoteComponent, "fc-default-note", never, {}, {}, never, never, false, never>;
 }
