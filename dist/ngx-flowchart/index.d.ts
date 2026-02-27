@@ -337,6 +337,7 @@ interface FcNote extends FcCoords {
     width: number;
     height: number;
     readonly?: boolean;
+    content?: string;
     [key: string]: any;
 }
 interface FcConnector {
@@ -684,5 +685,5 @@ declare class NgxFlowchartModule {
     static ɵinj: i0.ɵɵInjectorDeclaration<NgxFlowchartModule>;
 }
 
-export { DefaultFcNodeComponent, DefaultFcNoteComponent, FC_NODE_COMPONENT_CONFIG, FC_NOTE_COMPONENT_CONFIG, FcConnectorDirective, FcMagnetDirective, FcNodeComponent, FcNoteComponent, FcNoteContainerComponent, FcNoteDraggingService, FlowchartConstants, ModelvalidationError, NgxFlowchartComponent, NgxFlowchartModule, NoteDragMode, fcTopSort };
+export { DefaultFcNodeComponent, DefaultFcNoteComponent, FC_NODE_COMPONENT_CONFIG, FC_NOTE_COMPONENT_CONFIG, FcConnectorDirective, FcMagnetDirective, FcNodeComponent, FcNoteComponent, FcNoteContainerComponent, FlowchartConstants, ModelvalidationError, NgxFlowchartComponent, NgxFlowchartModule, NoteDragMode, fcTopSort };
 export type { FcAdjacentList, FcCallbacks, FcConnector, FcConnectorRectInfo, FcCoords, FcEdge, FcItemInfo, FcModel, FcNode, FcNodeComponentConfig, FcNodeRectInfo, FcNote, FcNoteComponentConfig, FcRectBox, UserCallbacks, UserNodeCallbacks, UserNoteCallbacks };

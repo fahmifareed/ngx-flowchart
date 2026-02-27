@@ -229,7 +229,7 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
           notesChanged = true;
         });
       }
-      if (nodesChanged) {
+      if (nodesChanged || notesChanged) {
         this.adjustCanvasSize(this.fitModelSizeByDefault);
       }
       if (nodesChanged || edgesChanged || notesChanged) {
@@ -251,6 +251,12 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
       maxX = Math.max(node.x + this.nodeWidth, maxX);
       maxY = Math.max(node.y + this.nodeHeight, maxY);
     });
+    if (this.model.notes) {
+      this.model.notes.forEach((note) => {
+        maxX = Math.max(note.x + note.width, maxX);
+        maxY = Math.max(note.y + note.height, maxY);
+      });
+    }
     let width: number;
     let height: number;
     if (fit) {

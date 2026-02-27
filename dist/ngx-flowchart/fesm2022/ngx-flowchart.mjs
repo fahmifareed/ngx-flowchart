@@ -1024,7 +1024,7 @@ var NoteDragMode;
 })(NoteDragMode || (NoteDragMode = {}));
 const NOTE_MIN_WIDTH = 80;
 const NOTE_MIN_HEIGHT = 60;
-const DRAG_THRESHOLD = 1;
+const DRAG_THRESHOLD = 4;
 class FcNoteDraggingService {
     constructor(modelService, applyFunction) {
         this.state = {
@@ -1883,8 +1883,8 @@ class FcNoteContainerComponent {
         }
     }
     mousedown(event) {
-        event.stopPropagation();
         if (!this.note.readonly && this.modelservice.isEditable()) {
+            event.stopPropagation();
             this.noteDraggingService.startMove(event, this.note);
         }
     }
@@ -2100,7 +2100,7 @@ class NgxFlowchartComponent {
                     notesChanged = true;
                 });
             }
-            if (nodesChanged) {
+            if (nodesChanged || notesChanged) {
                 this.adjustCanvasSize(this.fitModelSizeByDefault);
             }
             if (nodesChanged || edgesChanged || notesChanged) {
@@ -2119,6 +2119,12 @@ class NgxFlowchartComponent {
             maxX = Math.max(node.x + this.nodeWidth, maxX);
             maxY = Math.max(node.y + this.nodeHeight, maxY);
         });
+        if (this.model.notes) {
+            this.model.notes.forEach((note) => {
+                maxX = Math.max(note.x + note.width, maxX);
+                maxY = Math.max(note.y + note.height, maxY);
+            });
+        }
         let width;
         let height;
         if (fit) {
@@ -2423,11 +2429,11 @@ class DefaultFcNoteComponent extends FcNoteComponent {
         this.modelservice.notes.delete(this.note);
     }
     static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: DefaultFcNoteComponent, deps: [], target: i0.ɵɵFactoryTarget.Component }); }
-    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "17.0.0", version: "20.3.16", type: DefaultFcNoteComponent, isStandalone: false, selector: "fc-default-note", usesInheritance: true, ngImport: i0, template: "@if (modelservice.isEditable() && !note.readonly && edit) {\n  <div class=\"fc-noselect fc-nodeedit\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteEdit($event)\">\n    <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n  </div>\n  <div class=\"fc-noselect fc-nodedelete\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteDelete($event)\">\n    &times;\n  </div>\n}\n<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note['content'] || '' }}</div>\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}.fc-nodeedit,.fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer;z-index:10}.fc-nodeedit{top:-24px;right:16px;font-size:15px}.fc-nodedelete{top:-24px;right:-13px;font-size:18px}.fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}.fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}\n"] }); }
+    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "17.0.0", version: "20.3.16", type: DefaultFcNoteComponent, isStandalone: false, selector: "fc-default-note", usesInheritance: true, ngImport: i0, template: "@if (modelservice.isEditable() && !note.readonly && edit) {\n  <div class=\"fc-noselect fc-nodeedit\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteEdit($event)\">\n    <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n  </div>\n  <div class=\"fc-noselect fc-nodedelete\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteDelete($event)\">\n    &times;\n  </div>\n}\n<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note.content || '' }}</div>\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}.fc-nodeedit,.fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer;z-index:10}.fc-nodeedit{top:-24px;right:16px;font-size:15px}.fc-nodedelete{top:-24px;right:-13px;font-size:18px}.fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}.fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}\n"] }); }
 }
 i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: DefaultFcNoteComponent, decorators: [{
             type: Component,
-            args: [{ selector: 'fc-default-note', standalone: false, template: "@if (modelservice.isEditable() && !note.readonly && edit) {\n  <div class=\"fc-noselect fc-nodeedit\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteEdit($event)\">\n    <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n  </div>\n  <div class=\"fc-noselect fc-nodedelete\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteDelete($event)\">\n    &times;\n  </div>\n}\n<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note['content'] || '' }}</div>\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}.fc-nodeedit,.fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer;z-index:10}.fc-nodeedit{top:-24px;right:16px;font-size:15px}.fc-nodedelete{top:-24px;right:-13px;font-size:18px}.fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}.fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}\n"] }]
+            args: [{ selector: 'fc-default-note', standalone: false, template: "@if (modelservice.isEditable() && !note.readonly && edit) {\n  <div class=\"fc-noselect fc-nodeedit\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteEdit($event)\">\n    <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n  </div>\n  <div class=\"fc-noselect fc-nodedelete\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteDelete($event)\">\n    &times;\n  </div>\n}\n<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note.content || '' }}</div>\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}.fc-nodeedit,.fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer;z-index:10}.fc-nodeedit{top:-24px;right:16px;font-size:15px}.fc-nodedelete{top:-24px;right:-13px;font-size:18px}.fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}.fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}\n"] }]
         }], ctorParameters: () => [] });
 
 class NgxFlowchartModule {
@@ -2511,5 +2517,5 @@ i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImpo
  * Generated bundle index. Do not edit.
  */
 
-export { DefaultFcNodeComponent, DefaultFcNoteComponent, FC_NODE_COMPONENT_CONFIG, FC_NOTE_COMPONENT_CONFIG, FcConnectorDirective, FcMagnetDirective, FcNodeComponent, FcNoteComponent, FcNoteContainerComponent, FcNoteDraggingService, FlowchartConstants, ModelvalidationError, NgxFlowchartComponent, NgxFlowchartModule, NoteDragMode, fcTopSort };
+export { DefaultFcNodeComponent, DefaultFcNoteComponent, FC_NODE_COMPONENT_CONFIG, FC_NOTE_COMPONENT_CONFIG, FcConnectorDirective, FcMagnetDirective, FcNodeComponent, FcNoteComponent, FcNoteContainerComponent, FlowchartConstants, ModelvalidationError, NgxFlowchartComponent, NgxFlowchartModule, NoteDragMode, fcTopSort };
 //# sourceMappingURL=ngx-flowchart.mjs.map

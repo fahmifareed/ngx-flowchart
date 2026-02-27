@@ -64,6 +64,7 @@ export interface FcNote extends FcCoords {
   width: number;
   height: number;
   readonly?: boolean;
+  content?: string;
   [key: string]: any;
 }
 

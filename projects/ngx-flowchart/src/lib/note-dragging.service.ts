@@ -12,7 +12,7 @@ export enum NoteDragMode {
 
 const NOTE_MIN_WIDTH = 80;
 const NOTE_MIN_HEIGHT = 60;
-const DRAG_THRESHOLD = 1;
+const DRAG_THRESHOLD = 4;
 
 interface NoteDraggingState {
   mode: NoteDragMode;

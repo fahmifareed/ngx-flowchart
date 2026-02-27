@@ -11,4 +11,4 @@ export { FcConnectorDirective } from './lib/connector.directive';
 export { DefaultFcNodeComponent } from './lib/default-node.component';
 export { FcNoteComponent, FcNoteContainerComponent } from './lib/note.component';
 export { DefaultFcNoteComponent } from './lib/default-note.component';
-export { FcNoteDraggingService, NoteDragMode } from './lib/note-dragging.service';
+export { NoteDragMode } from './lib/note-dragging.service';

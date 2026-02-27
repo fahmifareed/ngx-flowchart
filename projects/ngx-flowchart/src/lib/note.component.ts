@@ -125,8 +125,8 @@ export class FcNoteContainerComponent implements OnInit, AfterViewInit, OnChange
 
   @HostListener('mousedown', ['$event'])
   mousedown(event: MouseEvent) {
-    event.stopPropagation();
     if (!this.note.readonly && this.modelservice.isEditable()) {
+      event.stopPropagation();
       this.noteDraggingService.startMove(event, this.note);
     }
   }
