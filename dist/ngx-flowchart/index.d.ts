@@ -1,5 +1,5 @@
 import * as i0 from '@angular/core';
-import { EventEmitter, OnInit, AfterViewInit, OnChanges, ViewContainerRef, ElementRef, ComponentFactoryResolver, SimpleChanges, InjectionToken, Type, DoCheck, IterableDiffers, ChangeDetectorRef, NgZone } from '@angular/core';
+import { EventEmitter, OnInit, AfterViewInit, OnChanges, ViewContainerRef, ElementRef, SimpleChanges, InjectionToken, Type, DoCheck, IterableDiffers, ChangeDetectorRef, NgZone } from '@angular/core';
 import { Observable, Subject } from 'rxjs';
 import * as i8 from '@angular/common';
 
@@ -119,7 +119,6 @@ declare class FcModelService {
 declare class FcNodeContainerComponent implements OnInit, AfterViewInit, OnChanges {
     private nodeComponentConfig;
     private elementRef;
-    private componentFactoryResolver;
     callbacks: FcCallbacks;
     userNodeCallbacks: UserNodeCallbacks;
     node: FcNode;
@@ -134,7 +133,7 @@ declare class FcNodeContainerComponent implements OnInit, AfterViewInit, OnChang
     get left(): string;
     nodeComponent: FcNodeComponent;
     nodeContentContainer: ViewContainerRef;
-    constructor(nodeComponentConfig: FcNodeComponentConfig, elementRef: ElementRef<HTMLElement>, componentFactoryResolver: ComponentFactoryResolver);
+    constructor(nodeComponentConfig: FcNodeComponentConfig, elementRef: ElementRef<HTMLElement>);
     ngOnInit(): void;
     ngAfterViewInit(): void;
     ngOnChanges(changes: SimpleChanges): void;
@@ -220,7 +219,6 @@ declare class FcNoteDraggingService {
 declare class FcNoteContainerComponent implements OnInit, AfterViewInit, OnChanges {
     private noteComponentConfig;
     private elementRef;
-    private componentFactoryResolver;
     note: FcNote;
     modelservice: FcModelService;
     noteDraggingService: FcNoteDraggingService;
@@ -235,7 +233,7 @@ declare class FcNoteContainerComponent implements OnInit, AfterViewInit, OnChang
     get left(): string;
     get width(): string;
     get height(): string;
-    constructor(noteComponentConfig: FcNoteComponentConfig, elementRef: ElementRef<HTMLElement>, componentFactoryResolver: ComponentFactoryResolver);
+    constructor(noteComponentConfig: FcNoteComponentConfig, elementRef: ElementRef<HTMLElement>);
     ngOnInit(): void;
     ngAfterViewInit(): void;
     ngOnChanges(changes: SimpleChanges): void;

@@ -1,7 +1,6 @@
 import {
   AfterViewInit,
   Component,
-  ComponentFactoryResolver,
   Directive,
   ElementRef,
   HostBinding,
@@ -55,8 +54,7 @@ export class FcNoteContainerComponent implements OnInit, AfterViewInit, OnChange
   get height(): string { return this.note.height + 'px'; }
 
   constructor(@Inject(FC_NOTE_COMPONENT_CONFIG) private noteComponentConfig: FcNoteComponentConfig,
-              private elementRef: ElementRef<HTMLElement>,
-              private componentFactoryResolver: ComponentFactoryResolver) {
+              private elementRef: ElementRef<HTMLElement>) {
   }
 
   ngOnInit(): void {
@@ -73,10 +71,9 @@ export class FcNoteContainerComponent implements OnInit, AfterViewInit, OnChange
     this.updateNoteClass();
 
     this.noteContentContainer.clear();
-    const componentFactory = this.componentFactoryResolver.resolveComponentFactory(
+    const componentRef = this.noteContentContainer.createComponent(
       this.noteComponentConfig.noteComponentType
     );
-    const componentRef = this.noteContentContainer.createComponent(componentFactory);
     this.noteComponent = componentRef.instance;
     this.noteComponent.note = this.note;
     this.noteComponent.modelservice = this.modelservice;

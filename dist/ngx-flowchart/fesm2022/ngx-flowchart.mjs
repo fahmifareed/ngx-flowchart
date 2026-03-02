@@ -1615,10 +1615,9 @@ class FcNodeContainerComponent {
     get left() {
         return this.node.x + 'px';
     }
-    constructor(nodeComponentConfig, elementRef, componentFactoryResolver) {
+    constructor(nodeComponentConfig, elementRef) {
         this.nodeComponentConfig = nodeComponentConfig;
         this.elementRef = elementRef;
-        this.componentFactoryResolver = componentFactoryResolver;
     }
     ngOnInit() {
         if (!this.userNodeCallbacks) {
@@ -1637,8 +1636,7 @@ class FcNodeContainerComponent {
         this.updateNodeClass();
         this.modelservice.nodes.setHtmlElement(this.node.id, element[0]);
         this.nodeContentContainer.clear();
-        const componentFactory = this.componentFactoryResolver.resolveComponentFactory(this.nodeComponentConfig.nodeComponentType);
-        const componentRef = this.nodeContentContainer.createComponent(componentFactory);
+        const componentRef = this.nodeContentContainer.createComponent(this.nodeComponentConfig.nodeComponentType);
         this.nodeComponent = componentRef.instance;
         this.nodeComponent.callbacks = this.callbacks;
         this.nodeComponent.userNodeCallbacks = this.userNodeCallbacks;
@@ -1717,7 +1715,7 @@ class FcNodeContainerComponent {
             this.callbacks.nodeMouseOut(event, this.node);
         }
     }
-    static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNodeContainerComponent, deps: [{ token: FC_NODE_COMPONENT_CONFIG }, { token: i0.ElementRef }, { token: i0.ComponentFactoryResolver }], target: i0.ɵɵFactoryTarget.Component }); }
+    static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNodeContainerComponent, deps: [{ token: FC_NODE_COMPONENT_CONFIG }, { token: i0.ElementRef }], target: i0.ɵɵFactoryTarget.Component }); }
     static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "14.0.0", version: "20.3.16", type: FcNodeContainerComponent, isStandalone: false, selector: "fc-node", inputs: { callbacks: "callbacks", userNodeCallbacks: "userNodeCallbacks", node: "node", selected: "selected", edit: "edit", underMouse: "underMouse", mouseOverConnector: "mouseOverConnector", modelservice: "modelservice", dragging: "dragging" }, host: { listeners: { "mousedown": "mousedown($event)", "dragstart": "dragstart($event)", "dragend": "dragend($event)", "click": "click($event)", "mouseover": "mouseover($event)", "mouseout": "mouseout($event)" }, properties: { "attr.id": "this.nodeId", "style.top": "this.top", "style.left": "this.left" } }, viewQueries: [{ propertyName: "nodeContentContainer", first: true, predicate: ["nodeContent"], descendants: true, read: ViewContainerRef, static: true }], usesOnChanges: true, ngImport: i0, template: '<ng-template #nodeContent></ng-template>', isInline: true, styles: [":host{position:absolute;z-index:1}:host.fc-dragging{z-index:10}:host ::ng-deep .fc-leftConnectors,:host ::ng-deep .fc-rightConnectors{position:absolute;top:0;height:100%;display:flex;flex-direction:column;z-index:-10}:host ::ng-deep .fc-leftConnectors .fc-magnet,:host ::ng-deep .fc-rightConnectors .fc-magnet{align-items:center}:host ::ng-deep .fc-leftConnectors{left:-20px}:host ::ng-deep .fc-rightConnectors{right:-20px}:host ::ng-deep .fc-magnet{display:flex;flex-grow:1;height:60px;justify-content:center}:host ::ng-deep .fc-connector{width:18px;height:18px;border:10px solid transparent;-moz-background-clip:padding;-webkit-background-clip:padding;background-clip:padding-box;border-radius:50%;background-color:#f7a789;color:#fff;pointer-events:all}:host ::ng-deep .fc-connector.fc-hover{background-color:#000}\n"] }); }
 }
 i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNodeContainerComponent, decorators: [{
@@ -1726,7 +1724,7 @@ i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImpo
         }], ctorParameters: () => [{ type: undefined, decorators: [{
                     type: Inject,
                     args: [FC_NODE_COMPONENT_CONFIG]
-                }] }, { type: i0.ElementRef }, { type: i0.ComponentFactoryResolver }], propDecorators: { callbacks: [{
+                }] }, { type: i0.ElementRef }], propDecorators: { callbacks: [{
                 type: Input
             }], userNodeCallbacks: [{
                 type: Input
@@ -1820,10 +1818,9 @@ class FcNoteContainerComponent {
     get left() { return this.note.x + 'px'; }
     get width() { return this.note.width + 'px'; }
     get height() { return this.note.height + 'px'; }
-    constructor(noteComponentConfig, elementRef, componentFactoryResolver) {
+    constructor(noteComponentConfig, elementRef) {
         this.noteComponentConfig = noteComponentConfig;
         this.elementRef = elementRef;
-        this.componentFactoryResolver = componentFactoryResolver;
     }
     ngOnInit() {
         if (!this.userNoteCallbacks) {
@@ -1837,8 +1834,7 @@ class FcNoteContainerComponent {
         element.classList.add(FlowchartConstants.noteClass);
         this.updateNoteClass();
         this.noteContentContainer.clear();
-        const componentFactory = this.componentFactoryResolver.resolveComponentFactory(this.noteComponentConfig.noteComponentType);
-        const componentRef = this.noteContentContainer.createComponent(componentFactory);
+        const componentRef = this.noteContentContainer.createComponent(this.noteComponentConfig.noteComponentType);
         this.noteComponent = componentRef.instance;
         this.noteComponent.note = this.note;
         this.noteComponent.modelservice = this.modelservice;
@@ -1913,7 +1909,7 @@ class FcNoteContainerComponent {
     get noteDragMode() {
         return NoteDragMode;
     }
-    static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNoteContainerComponent, deps: [{ token: FC_NOTE_COMPONENT_CONFIG }, { token: i0.ElementRef }, { token: i0.ComponentFactoryResolver }], target: i0.ɵɵFactoryTarget.Component }); }
+    static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNoteContainerComponent, deps: [{ token: FC_NOTE_COMPONENT_CONFIG }, { token: i0.ElementRef }], target: i0.ɵɵFactoryTarget.Component }); }
     static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "14.0.0", version: "20.3.16", type: FcNoteContainerComponent, isStandalone: false, selector: "fc-note", inputs: { note: "note", modelservice: "modelservice", noteDraggingService: "noteDraggingService", userNoteCallbacks: "userNoteCallbacks", selected: "selected", edit: "edit", dragging: "dragging" }, host: { listeners: { "mousedown": "mousedown($event)", "click": "click($event)", "mouseenter": "mouseenter($event)", "mouseleave": "mouseleave($event)" }, properties: { "attr.id": "this.noteId", "style.top": "this.top", "style.left": "this.left", "style.width": "this.width", "style.height": "this.height" } }, viewQueries: [{ propertyName: "noteContentContainer", first: true, predicate: ["noteContent"], descendants: true, read: ViewContainerRef, static: true }], usesOnChanges: true, ngImport: i0, template: "<ng-template #noteContent></ng-template>\n<div class=\"fc-note-resize-handle fc-note-resize-s\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeS)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-e\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-se\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeSE)\">\n</div>\n", styles: [":host{position:absolute;z-index:0;box-sizing:border-box;display:block;cursor:move;-webkit-user-select:none;user-select:none}:host.fc-dragging{opacity:.85}:host.fc-selected{box-shadow:0 0 0 3px #00000059}.fc-note-resize-handle{position:absolute;z-index:10}.fc-note-resize-se{bottom:0;right:0;width:14px;height:14px;cursor:se-resize}.fc-note-resize-s{bottom:0;left:50%;transform:translate(-50%);width:40px;height:8px;cursor:s-resize}.fc-note-resize-e{right:0;top:50%;transform:translateY(-50%);width:8px;height:40px;cursor:e-resize}\n"] }); }
 }
 i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNoteContainerComponent, decorators: [{
@@ -1922,7 +1918,7 @@ i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImpo
         }], ctorParameters: () => [{ type: undefined, decorators: [{
                     type: Inject,
                     args: [FC_NOTE_COMPONENT_CONFIG]
-                }] }, { type: i0.ElementRef }, { type: i0.ComponentFactoryResolver }], propDecorators: { note: [{
+                }] }, { type: i0.ElementRef }], propDecorators: { note: [{
                 type: Input
             }], modelservice: [{
                 type: Input
