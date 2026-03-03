@@ -721,6 +721,17 @@ i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImpo
             type: Injectable
         }] });
 
+const regex = /(auto|scroll)/;
+const style = (node, prop) => getComputedStyle(node, null).getPropertyValue(prop);
+const scroll = (node) => regex.test(style(node, 'overflow') +
+    style(node, 'overflow-y') +
+    style(node, 'overflow-x'));
+const scrollparent = (node) => !node || node === document.body
+    ? document.body
+    : scroll(node)
+        ? node
+        : scrollparent(node.parentNode);
+
 const nodeDropScope = {
     dropElement: null
 };
@@ -736,10 +747,13 @@ class FcNodeDraggingService {
         this.draggedElements = [];
         this.destinationHtmlElements = [];
         this.oldDisplayStyles = [];
+        this.lastScrollLeft = 0;
+        this.lastScrollTop = 0;
         this.modelService = modelService;
         this.automaticResize = automaticResize;
         this.dragAnimation = dragAnimation;
         this.applyFunction = applyFunction;
+        this.scrollParent = scrollparent(this.modelService.canvasHtmlElement);
     }
     getCoordinate(coordinate, max) {
         coordinate = Math.max(coordinate, 0);
@@ -751,6 +765,18 @@ class FcNodeDraggingService {
     }
     getYCoordinate(y) {
         return this.getCoordinate(y, this.modelService.canvasHtmlElement.offsetHeight);
+    }
+    compensateScrollDrift() {
+        const scrollDx = this.scrollParent.scrollLeft - this.lastScrollLeft;
+        const scrollDy = this.scrollParent.scrollTop - this.lastScrollTop;
+        if (scrollDx !== 0 || scrollDy !== 0) {
+            for (const offset of this.dragOffsets) {
+                offset.x += scrollDx;
+                offset.y += scrollDy;
+            }
+            this.lastScrollLeft = this.scrollParent.scrollLeft;
+            this.lastScrollTop = this.scrollParent.scrollTop;
+        }
     }
     resizeCanvas(draggedNode, nodeElement) {
         if (this.automaticResize && !this.modelService.isDropSource()) {
@@ -834,6 +860,8 @@ class FcNodeDraggingService {
             }
             return;
         }
+        this.lastScrollLeft = this.scrollParent.scrollLeft;
+        this.lastScrollTop = this.scrollParent.scrollTop;
         this.nodeDraggingScope.draggedNodes = nodes;
         for (let i = 0; i < elements.length; i++) {
             this.draggedElements.push(elements[i][0]);
@@ -912,6 +940,7 @@ class FcNodeDraggingService {
             return false;
         }
         else if (this.nodeDraggingScope.draggedNodes.length) {
+            this.compensateScrollDrift();
             return this.applyFunction(() => {
                 for (let i = 0; i < this.nodeDraggingScope.draggedNodes.length; i++) {
                     const draggedNode = this.nodeDraggingScope.draggedNodes[i];
@@ -947,6 +976,7 @@ class FcNodeDraggingService {
             event.preventDefault();
             return;
         }
+        this.compensateScrollDrift();
         if (this.dragAnimation === FlowchartConstants.dragAnimationRepaint) {
             if (this.nodeDraggingScope.draggedNodes.length) {
                 return this.applyFunction(() => {
@@ -1026,7 +1056,7 @@ const NOTE_MIN_WIDTH = 80;
 const NOTE_MIN_HEIGHT = 60;
 const DRAG_THRESHOLD = 4;
 class FcNoteDraggingService {
-    constructor(modelService, applyFunction) {
+    constructor(modelService, applyFunction, automaticResize) {
         this.state = {
             mode: NoteDragMode.None,
             pendingNote: null,
@@ -1041,9 +1071,52 @@ class FcNoteDraggingService {
             startHeight: 0
         };
         this.modelService = modelService;
+        this.automaticResize = automaticResize;
         this.applyFunction = applyFunction;
+        this.scrollParent = scrollparent(this.modelService.canvasHtmlElement);
         this.onMouseMove = this.mousemove.bind(this);
         this.onMouseUp = this.mouseup.bind(this);
+    }
+    updateScroll(event) {
+        const rect = this.scrollParent.getBoundingClientRect();
+        const oldScrollLeft = this.scrollParent.scrollLeft;
+        const oldScrollTop = this.scrollParent.scrollTop;
+        if (event.clientY - rect.top < 25) {
+            this.scrollParent.scrollTop -= 25 - (event.clientY - rect.top);
+        }
+        else if (rect.bottom - event.clientY < 40) {
+            this.scrollParent.scrollTop += 40 - (rect.bottom - event.clientY);
+        }
+        if (event.clientX - rect.left < 25) {
+            this.scrollParent.scrollLeft -= 25 - (event.clientX - rect.left);
+        }
+        else if (rect.right - event.clientX < 40) {
+            this.scrollParent.scrollLeft += 40 - (rect.right - event.clientX);
+        }
+        // Compensate offsets so that notes stay under the cursor after scroll
+        const scrollDx = this.scrollParent.scrollLeft - oldScrollLeft;
+        const scrollDy = this.scrollParent.scrollTop - oldScrollTop;
+        if (scrollDx !== 0 || scrollDy !== 0) {
+            for (const offset of this.state.offsets) {
+                offset.x += scrollDx;
+                offset.y += scrollDy;
+            }
+            for (const offset of this.state.nodeOffsets) {
+                offset.x += scrollDx;
+                offset.y += scrollDy;
+            }
+        }
+    }
+    resizeCanvas(note) {
+        if (this.automaticResize) {
+            const canvasElement = this.modelService.canvasHtmlElement;
+            if (canvasElement.offsetWidth < note.x + note.width + FlowchartConstants.canvasResizeThreshold) {
+                canvasElement.style.width = canvasElement.offsetWidth + FlowchartConstants.canvasResizeStep + 'px';
+            }
+            if (canvasElement.offsetHeight < note.y + note.height + FlowchartConstants.canvasResizeThreshold) {
+                canvasElement.style.height = canvasElement.offsetHeight + FlowchartConstants.canvasResizeStep + 'px';
+            }
+        }
     }
     isDraggingNote(note) {
         return (this.state.mode === NoteDragMode.Move || this.state.mode === NoteDragMode.ResizeSE ||
@@ -1149,6 +1222,7 @@ class FcNoteDraggingService {
             }
             return;
         }
+        this.updateScroll(event);
         this.applyFunction(() => {
             const dx = event.clientX - this.state.startMouseX;
             const dy = event.clientY - this.state.startMouseY;
@@ -1158,6 +1232,7 @@ class FcNoteDraggingService {
                     const offset = this.state.offsets[i];
                     note.x = Math.round(Math.max(0, offset.x + event.clientX));
                     note.y = Math.round(Math.max(0, offset.y + event.clientY));
+                    this.resizeCanvas(note);
                 }
                 for (let i = 0; i < this.state.nodes.length; i++) {
                     const node = this.state.nodes[i];
@@ -1178,6 +1253,7 @@ class FcNoteDraggingService {
                 else if (this.state.mode === NoteDragMode.ResizeE) {
                     note.width = Math.max(NOTE_MIN_WIDTH, Math.round(this.state.startWidth + dx));
                 }
+                this.resizeCanvas(note);
             }
         });
     }
@@ -1505,17 +1581,6 @@ class FcMouseOverService {
         this.mouseoverscope.edge = null;
     }
 }
-
-const regex = /(auto|scroll)/;
-const style = (node, prop) => getComputedStyle(node, null).getPropertyValue(prop);
-const scroll = (node) => regex.test(style(node, 'overflow') +
-    style(node, 'overflow-y') +
-    style(node, 'overflow-x'));
-const scrollparent = (node) => !node || node === document.body
-    ? document.body
-    : scroll(node)
-        ? node
-        : scrollparent(node.parentNode);
 
 class FcRectangleSelectService {
     constructor(modelService, selectElement, applyFunction) {
@@ -2039,7 +2104,7 @@ class NgxFlowchartComponent {
         }
         const applyFunction = this.zone.run.bind(this.zone);
         this.nodeDraggingService = new FcNodeDraggingService(this.modelService, applyFunction, this.automaticResize, this.dragAnimation);
-        this.noteDraggingService = new FcNoteDraggingService(this.modelService, applyFunction);
+        this.noteDraggingService = new FcNoteDraggingService(this.modelService, applyFunction, this.automaticResize);
         this.edgeDraggingService = new FcEdgeDraggingService(this.modelValidation, this.edgeDrawingService, this.modelService, this.model, this.userCallbacks.isValidEdge || null, applyFunction, this.dragAnimation, this.edgeStyle);
         this.mouseoverService = new FcMouseOverService(applyFunction);
         this.rectangleSelectService = new FcRectangleSelectService(this.modelService, element[0].querySelector('#select-rectangle'), applyFunction);

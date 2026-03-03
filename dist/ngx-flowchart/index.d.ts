@@ -203,11 +203,15 @@ declare enum NoteDragMode {
 }
 declare class FcNoteDraggingService {
     private readonly modelService;
+    private readonly automaticResize;
     private readonly applyFunction;
+    private readonly scrollParent;
     private state;
     private readonly onMouseMove;
     private readonly onMouseUp;
-    constructor(modelService: FcModelService, applyFunction: <T>(fn: (...args: any[]) => T) => T);
+    constructor(modelService: FcModelService, applyFunction: <T>(fn: (...args: any[]) => T) => T, automaticResize: boolean);
+    private updateScroll;
+    private resizeCanvas;
     isDraggingNote(note: FcNote): boolean;
     startMove(event: MouseEvent, note: FcNote): void;
     private commitMove;
@@ -446,10 +450,14 @@ declare class FcNodeDraggingService {
     private readonly automaticResize;
     private readonly dragAnimation;
     private readonly applyFunction;
+    private readonly scrollParent;
+    private lastScrollLeft;
+    private lastScrollTop;
     constructor(modelService: FcModelService, applyFunction: <T>(fn: (...args: any[]) => T) => T, automaticResize: boolean, dragAnimation: string);
     private getCoordinate;
     private getXCoordinate;
     private getYCoordinate;
+    private compensateScrollDrift;
     private resizeCanvas;
     isDraggingNode(node: FcNode): boolean;
     dragstart(event: Event | any, node: FcNode): void;

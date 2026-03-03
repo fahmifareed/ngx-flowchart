@@ -1,5 +1,6 @@
 import { FcModelService } from './model.service';
 import { FcCoords, FcNode, FlowchartConstants } from './ngx-flowchart.models';
+import scrollparent from './scrollparent';
 
 const nodeDropScope: NodeDropScope = {
   dropElement: null
@@ -24,6 +25,9 @@ export class FcNodeDraggingService {
   private readonly automaticResize: boolean;
   private readonly dragAnimation: string;
   private readonly applyFunction: <T>(fn: (...args: any[]) => T) => T;
+  private readonly scrollParent: HTMLElement;
+  private lastScrollLeft = 0;
+  private lastScrollTop = 0;
 
   constructor(modelService: FcModelService,
               applyFunction: <T>(fn: (...args: any[]) => T) => T,
@@ -32,6 +36,7 @@ export class FcNodeDraggingService {
     this.automaticResize = automaticResize;
     this.dragAnimation = dragAnimation;
     this.applyFunction = applyFunction;
+    this.scrollParent = scrollparent(this.modelService.canvasHtmlElement);
   }
 
   private getCoordinate(coordinate: number, max: number): number {
@@ -46,6 +51,19 @@ export class FcNodeDraggingService {
 
   private getYCoordinate(y: number): number {
     return this.getCoordinate(y, this.modelService.canvasHtmlElement.offsetHeight);
+  }
+
+  private compensateScrollDrift() {
+    const scrollDx = this.scrollParent.scrollLeft - this.lastScrollLeft;
+    const scrollDy = this.scrollParent.scrollTop - this.lastScrollTop;
+    if (scrollDx !== 0 || scrollDy !== 0) {
+      for (const offset of this.dragOffsets) {
+        offset.x += scrollDx;
+        offset.y += scrollDy;
+      }
+      this.lastScrollLeft = this.scrollParent.scrollLeft;
+      this.lastScrollTop = this.scrollParent.scrollTop;
+    }
   }
 
   private resizeCanvas(draggedNode: FcNode, nodeElement: HTMLElement) {
@@ -132,6 +150,8 @@ export class FcNodeDraggingService {
       }
       return;
     }
+    this.lastScrollLeft = this.scrollParent.scrollLeft;
+    this.lastScrollTop = this.scrollParent.scrollTop;
     this.nodeDraggingScope.draggedNodes = nodes;
     for (let i = 0; i < elements.length; i++) {
       this.draggedElements.push(elements[i][0]);
@@ -211,6 +231,7 @@ export class FcNodeDraggingService {
       event.preventDefault();
       return false;
     } else if (this.nodeDraggingScope.draggedNodes.length) {
+      this.compensateScrollDrift();
       return this.applyFunction(() => {
         for (let i = 0; i < this.nodeDraggingScope.draggedNodes.length; i++) {
           const draggedNode = this.nodeDraggingScope.draggedNodes[i];
@@ -247,6 +268,7 @@ export class FcNodeDraggingService {
       event.preventDefault();
       return;
     }
+    this.compensateScrollDrift();
     if (this.dragAnimation === FlowchartConstants.dragAnimationRepaint) {
       if (this.nodeDraggingScope.draggedNodes.length) {
         return this.applyFunction(() => {
@@ -284,7 +306,7 @@ export class FcNodeDraggingService {
     }
   }
 
-  public dragend(event: Event | any) {
+  public dragend(_event: Event | any) {
     this.applyFunction(() => {
       if (nodeDropScope.dropElement) {
         nodeDropScope.dropElement.parentNode.removeChild(nodeDropScope.dropElement);

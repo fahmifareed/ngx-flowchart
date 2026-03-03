@@ -164,7 +164,7 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
     this.nodeDraggingService = new FcNodeDraggingService(this.modelService, applyFunction,
           this.automaticResize, this.dragAnimation);
 
-    this.noteDraggingService = new FcNoteDraggingService(this.modelService, applyFunction);
+    this.noteDraggingService = new FcNoteDraggingService(this.modelService, applyFunction, this.automaticResize);
 
     this.edgeDraggingService = new FcEdgeDraggingService(this.modelValidation, this.edgeDrawingService, this.modelService,
       this.model, this.userCallbacks.isValidEdge || null, applyFunction,

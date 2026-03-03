@@ -1,5 +1,6 @@
 import { FcModelService } from './model.service';
-import { FcNode, FcNote } from './ngx-flowchart.models';
+import { FcNode, FcNote, FlowchartConstants } from './ngx-flowchart.models';
+import scrollparent from './scrollparent';
 
 export enum NoteDragMode {
   None = 'none',
@@ -31,7 +32,9 @@ interface NoteDraggingState {
 export class FcNoteDraggingService {
 
   private readonly modelService: FcModelService;
+  private readonly automaticResize: boolean;
   private readonly applyFunction: <T>(fn: (...args: any[]) => T) => T;
+  private readonly scrollParent: HTMLElement;
 
   private state: NoteDraggingState = {
     mode: NoteDragMode.None,
@@ -51,12 +54,58 @@ export class FcNoteDraggingService {
   private readonly onMouseUp: (e: MouseEvent) => void;
 
   constructor(modelService: FcModelService,
-              applyFunction: <T>(fn: (...args: any[]) => T) => T) {
+              applyFunction: <T>(fn: (...args: any[]) => T) => T,
+              automaticResize: boolean) {
     this.modelService = modelService;
+    this.automaticResize = automaticResize;
     this.applyFunction = applyFunction;
+    this.scrollParent = scrollparent(this.modelService.canvasHtmlElement);
 
     this.onMouseMove = this.mousemove.bind(this);
     this.onMouseUp = this.mouseup.bind(this);
+  }
+
+  private updateScroll(event: MouseEvent) {
+    const rect = this.scrollParent.getBoundingClientRect();
+    const oldScrollLeft = this.scrollParent.scrollLeft;
+    const oldScrollTop = this.scrollParent.scrollTop;
+
+    if (event.clientY - rect.top < 25) {
+      this.scrollParent.scrollTop -= 25 - (event.clientY - rect.top);
+    } else if (rect.bottom - event.clientY < 40) {
+      this.scrollParent.scrollTop += 40 - (rect.bottom - event.clientY);
+    }
+    if (event.clientX - rect.left < 25) {
+      this.scrollParent.scrollLeft -= 25 - (event.clientX - rect.left);
+    } else if (rect.right - event.clientX < 40) {
+      this.scrollParent.scrollLeft += 40 - (rect.right - event.clientX);
+    }
+
+    // Compensate offsets so that notes stay under the cursor after scroll
+    const scrollDx = this.scrollParent.scrollLeft - oldScrollLeft;
+    const scrollDy = this.scrollParent.scrollTop - oldScrollTop;
+    if (scrollDx !== 0 || scrollDy !== 0) {
+      for (const offset of this.state.offsets) {
+        offset.x += scrollDx;
+        offset.y += scrollDy;
+      }
+      for (const offset of this.state.nodeOffsets) {
+        offset.x += scrollDx;
+        offset.y += scrollDy;
+      }
+    }
+  }
+
+  private resizeCanvas(note: FcNote) {
+    if (this.automaticResize) {
+      const canvasElement = this.modelService.canvasHtmlElement;
+      if (canvasElement.offsetWidth < note.x + note.width + FlowchartConstants.canvasResizeThreshold) {
+        canvasElement.style.width = canvasElement.offsetWidth + FlowchartConstants.canvasResizeStep + 'px';
+      }
+      if (canvasElement.offsetHeight < note.y + note.height + FlowchartConstants.canvasResizeThreshold) {
+        canvasElement.style.height = canvasElement.offsetHeight + FlowchartConstants.canvasResizeStep + 'px';
+      }
+    }
   }
 
   public isDraggingNote(note: FcNote): boolean {
@@ -177,6 +226,7 @@ export class FcNoteDraggingService {
       return;
     }
 
+    this.updateScroll(event);
     this.applyFunction(() => {
       const dx = event.clientX - this.state.startMouseX;
       const dy = event.clientY - this.state.startMouseY;
@@ -187,6 +237,7 @@ export class FcNoteDraggingService {
           const offset = this.state.offsets[i];
           note.x = Math.round(Math.max(0, offset.x + event.clientX));
           note.y = Math.round(Math.max(0, offset.y + event.clientY));
+          this.resizeCanvas(note);
         }
         for (let i = 0; i < this.state.nodes.length; i++) {
           const node = this.state.nodes[i];
@@ -204,6 +255,7 @@ export class FcNoteDraggingService {
         } else if (this.state.mode === NoteDragMode.ResizeE) {
           note.width = Math.max(NOTE_MIN_WIDTH, Math.round(this.state.startWidth + dx));
         }
+        this.resizeCanvas(note);
       }
     });
   }
