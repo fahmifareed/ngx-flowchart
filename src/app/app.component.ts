@@ -279,13 +279,17 @@ export class AppComponent implements AfterViewInit {
   }
 
   public addNote() {
+    const content = prompt('Enter a note:', 'New note');
+    if (!content) {
+      return;
+    }
     const note: FcNote = {
       id: 'note-' + (this.nextNoteID++),
       x: 200,
       y: 300,
       width: 200,
       height: 120,
-      content: 'New note'
+      content
     };
     this.model.notes.push(note);
   }
