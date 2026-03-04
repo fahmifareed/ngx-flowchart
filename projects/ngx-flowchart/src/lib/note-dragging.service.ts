@@ -128,7 +128,7 @@ export class FcNoteDraggingService {
   }
 
   public startMove(event: MouseEvent, note: FcNote) {
-    if (note.readonly) {
+    if (note.readonly || this.state.mode !== NoteDragMode.None) {
       return;
     }
     event.stopPropagation();
@@ -204,7 +204,7 @@ export class FcNoteDraggingService {
   }
 
   public startResize(event: MouseEvent, note: FcNote, mode: NoteDragMode) {
-    if (note.readonly) {
+    if (note.readonly || this.state.mode !== NoteDragMode.None) {
       return;
     }
     event.stopPropagation();

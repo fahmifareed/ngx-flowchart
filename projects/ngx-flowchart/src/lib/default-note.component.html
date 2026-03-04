@@ -11,6 +11,6 @@
   </div>
 }
 <div class="fc-default-note-content"
-     (dblclick)="userNoteCallbacks.doubleClick($event, note)">
+     (dblclick)="userNoteCallbacks?.doubleClick?.($event, note)">
   <div class="fc-default-note-text">{{ note.content || '' }}</div>
 </div>

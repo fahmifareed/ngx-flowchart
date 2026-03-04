@@ -247,14 +247,15 @@ export class NgxFlowchartComponent implements OnInit, DoCheck {
     let maxX = 0;
     let maxY = 0;
     const element = $(this.elementRef.nativeElement);
+    const padding = this.dropTargetId ? 0 : FlowchartConstants.canvasResizeThreshold;
     this.model.nodes.forEach((node) => {
-      maxX = Math.max(node.x + this.nodeWidth, maxX);
-      maxY = Math.max(node.y + this.nodeHeight, maxY);
+      maxX = Math.max(node.x + this.nodeWidth + padding, maxX);
+      maxY = Math.max(node.y + this.nodeHeight + padding, maxY);
     });
     if (this.model.notes) {
       this.model.notes.forEach((note) => {
-        maxX = Math.max(note.x + note.width, maxX);
-        maxY = Math.max(note.y + note.height, maxY);
+        maxX = Math.max(note.x + note.width + padding, maxX);
+        maxY = Math.max(note.y + note.height + padding, maxY);
       });
     }
     let width: number;

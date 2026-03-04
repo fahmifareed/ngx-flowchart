@@ -1,5 +1,5 @@
 <div
-  (dblclick)="userNodeCallbacks.doubleClick($event, node)">
+  (dblclick)="userNodeCallbacks?.doubleClick?.($event, node)">
   <div class="{{flowchartConstants.nodeOverlayClass}}"></div>
   <div class="innerNode">
     <p>{{ node.name }}</p>

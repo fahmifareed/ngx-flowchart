@@ -41,8 +41,8 @@ export const FlowchartConstants = {
   nodeOverlayClass: htmlPrefix + '-node-overlay',
   leftConnectorClass: htmlPrefix + '-' + leftConnectorType + 's',
   rightConnectorClass: htmlPrefix + '-' + rightConnectorType + 's',
-  canvasResizeThreshold: 200,
-  canvasResizeStep: 200,
+  canvasResizeThreshold: 100,
+  canvasResizeStep: 100,
   noteClass: htmlPrefix + '-note'
 };
 

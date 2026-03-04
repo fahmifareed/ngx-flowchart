@@ -455,8 +455,8 @@ export class FcModelService {
 
   public getNoteAtPoint(x: number, y: number): FcNote {
     if (!this.model.notes) { return null; }
+    const canvasBox = this.canvasHtmlElement.getBoundingClientRect();
     for (const note of this.model.notes) {
-      const canvasBox = this.canvasHtmlElement.getBoundingClientRect();
       const noteLeft = canvasBox.left + note.x;
       const noteTop = canvasBox.top + note.y;
       if (x >= noteLeft && x <= noteLeft + note.width &&
