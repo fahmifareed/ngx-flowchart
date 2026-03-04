@@ -197,9 +197,14 @@ declare enum NoteDragMode {
     None = "none",
     Pending = "pending",// mousedown recorded, waiting for drag threshold
     Move = "move",
+    ResizeN = "resize-n",
+    ResizeNE = "resize-ne",
+    ResizeE = "resize-e",
     ResizeSE = "resize-se",
     ResizeS = "resize-s",
-    ResizeE = "resize-e"
+    ResizeSW = "resize-sw",
+    ResizeW = "resize-w",
+    ResizeNW = "resize-nw"
 }
 declare class FcNoteDraggingService {
     private readonly modelService;
@@ -463,7 +468,7 @@ declare class FcNodeDraggingService {
     dragstart(event: Event | any, node: FcNode): void;
     drop(event: Event | any): boolean;
     dragover(event: Event | any): boolean;
-    dragend(event: Event | any): void;
+    dragend(_event: Event | any): void;
 }
 interface NodeDraggingScope {
     draggedNodes: Array<FcNode>;

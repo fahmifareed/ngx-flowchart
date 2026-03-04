@@ -6,9 +6,14 @@ export enum NoteDragMode {
   None = 'none',
   Pending = 'pending',   // mousedown recorded, waiting for drag threshold
   Move = 'move',
+  ResizeN = 'resize-n',
+  ResizeNE = 'resize-ne',
+  ResizeE = 'resize-e',
   ResizeSE = 'resize-se',
   ResizeS = 'resize-s',
-  ResizeE = 'resize-e'
+  ResizeSW = 'resize-sw',
+  ResizeW = 'resize-w',
+  ResizeNW = 'resize-nw'
 }
 
 const NOTE_MIN_WIDTH = 80;
@@ -25,6 +30,8 @@ interface NoteDraggingState {
   resizeNote: FcNote | null;
   startMouseX: number;
   startMouseY: number;
+  startX: number;
+  startY: number;
   startWidth: number;
   startHeight: number;
 }
@@ -46,6 +53,8 @@ export class FcNoteDraggingService {
     resizeNote: null,
     startMouseX: 0,
     startMouseY: 0,
+    startX: 0,
+    startY: 0,
     startWidth: 0,
     startHeight: 0
   };
@@ -81,7 +90,7 @@ export class FcNoteDraggingService {
       this.scrollParent.scrollLeft += 40 - (rect.right - event.clientX);
     }
 
-    // Compensate offsets so that notes stay under the cursor after scroll
+    // Compensate so that notes stay under the cursor after scroll
     const scrollDx = this.scrollParent.scrollLeft - oldScrollLeft;
     const scrollDy = this.scrollParent.scrollTop - oldScrollTop;
     if (scrollDx !== 0 || scrollDy !== 0) {
@@ -92,6 +101,11 @@ export class FcNoteDraggingService {
       for (const offset of this.state.nodeOffsets) {
         offset.x += scrollDx;
         offset.y += scrollDy;
+      }
+      // For resize: adjust startMouse so that dx/dy account for the scroll shift
+      if (this.state.resizeNote) {
+        this.state.startMouseX -= scrollDx;
+        this.state.startMouseY -= scrollDy;
       }
     }
   }
@@ -109,8 +123,7 @@ export class FcNoteDraggingService {
   }
 
   public isDraggingNote(note: FcNote): boolean {
-    return (this.state.mode === NoteDragMode.Move || this.state.mode === NoteDragMode.ResizeSE ||
-            this.state.mode === NoteDragMode.ResizeS || this.state.mode === NoteDragMode.ResizeE) &&
+    return this.state.mode !== NoteDragMode.None && this.state.mode !== NoteDragMode.Pending &&
       (this.state.notes.includes(note) || this.state.resizeNote === note);
   }
 
@@ -132,6 +145,8 @@ export class FcNoteDraggingService {
       resizeNote: null,
       startMouseX: event.clientX,
       startMouseY: event.clientY,
+      startX: 0,
+      startY: 0,
       startWidth: 0,
       startHeight: 0
     };
@@ -205,6 +220,8 @@ export class FcNoteDraggingService {
       resizeNote: note,
       startMouseX: event.clientX,
       startMouseY: event.clientY,
+      startX: note.x,
+      startY: note.y,
       startWidth: note.width,
       startHeight: note.height
     };
@@ -232,28 +249,59 @@ export class FcNoteDraggingService {
       const dy = event.clientY - this.state.startMouseY;
 
       if (this.state.mode === NoteDragMode.Move) {
+        // Find the max correction needed so no element goes below 0
+        let minX = 0;
+        let minY = 0;
+        for (const offset of this.state.offsets) {
+          minX = Math.min(minX, offset.x + event.clientX);
+          minY = Math.min(minY, offset.y + event.clientY);
+        }
+        for (const offset of this.state.nodeOffsets) {
+          minX = Math.min(minX, offset.x + event.clientX);
+          minY = Math.min(minY, offset.y + event.clientY);
+        }
+        const clampedClientX = event.clientX - minX;
+        const clampedClientY = event.clientY - minY;
+
         for (let i = 0; i < this.state.notes.length; i++) {
           const note = this.state.notes[i];
           const offset = this.state.offsets[i];
-          note.x = Math.round(Math.max(0, offset.x + event.clientX));
-          note.y = Math.round(Math.max(0, offset.y + event.clientY));
+          note.x = Math.round(offset.x + clampedClientX);
+          note.y = Math.round(offset.y + clampedClientY);
           this.resizeCanvas(note);
         }
         for (let i = 0; i < this.state.nodes.length; i++) {
           const node = this.state.nodes[i];
           const offset = this.state.nodeOffsets[i];
-          node.x = Math.round(Math.max(0, offset.x + event.clientX));
-          node.y = Math.round(Math.max(0, offset.y + event.clientY));
+          node.x = Math.round(offset.x + clampedClientX);
+          node.y = Math.round(offset.y + clampedClientY);
         }
       } else if (this.state.resizeNote) {
         const note = this.state.resizeNote;
-        if (this.state.mode === NoteDragMode.ResizeSE) {
+        const mode = this.state.mode;
+
+        // Horizontal component
+        const resizesE = mode === NoteDragMode.ResizeE || mode === NoteDragMode.ResizeSE || mode === NoteDragMode.ResizeNE;
+        const resizesW = mode === NoteDragMode.ResizeW || mode === NoteDragMode.ResizeSW || mode === NoteDragMode.ResizeNW;
+        // Vertical component
+        const resizesS = mode === NoteDragMode.ResizeS || mode === NoteDragMode.ResizeSE || mode === NoteDragMode.ResizeSW;
+        const resizesN = mode === NoteDragMode.ResizeN || mode === NoteDragMode.ResizeNE || mode === NoteDragMode.ResizeNW;
+
+        if (resizesE) {
           note.width = Math.max(NOTE_MIN_WIDTH, Math.round(this.state.startWidth + dx));
+        }
+        if (resizesW) {
+          const rightEdge = this.state.startX + this.state.startWidth;
+          note.x = Math.max(0, Math.round(Math.min(rightEdge - NOTE_MIN_WIDTH, this.state.startX + dx)));
+          note.width = rightEdge - note.x;
+        }
+        if (resizesS) {
           note.height = Math.max(NOTE_MIN_HEIGHT, Math.round(this.state.startHeight + dy));
-        } else if (this.state.mode === NoteDragMode.ResizeS) {
-          note.height = Math.max(NOTE_MIN_HEIGHT, Math.round(this.state.startHeight + dy));
-        } else if (this.state.mode === NoteDragMode.ResizeE) {
-          note.width = Math.max(NOTE_MIN_WIDTH, Math.round(this.state.startWidth + dx));
+        }
+        if (resizesN) {
+          const bottomEdge = this.state.startY + this.state.startHeight;
+          note.y = Math.max(0, Math.round(Math.min(bottomEdge - NOTE_MIN_HEIGHT, this.state.startY + dy)));
+          note.height = bottomEdge - note.y;
         }
         this.resizeCanvas(note);
       }

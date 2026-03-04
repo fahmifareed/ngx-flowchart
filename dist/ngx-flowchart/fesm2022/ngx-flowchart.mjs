@@ -1014,7 +1014,7 @@ class FcNodeDraggingService {
             }
         }
     }
-    dragend(event) {
+    dragend(_event) {
         this.applyFunction(() => {
             if (nodeDropScope.dropElement) {
                 nodeDropScope.dropElement.parentNode.removeChild(nodeDropScope.dropElement);
@@ -1048,9 +1048,14 @@ var NoteDragMode;
     NoteDragMode["None"] = "none";
     NoteDragMode["Pending"] = "pending";
     NoteDragMode["Move"] = "move";
+    NoteDragMode["ResizeN"] = "resize-n";
+    NoteDragMode["ResizeNE"] = "resize-ne";
+    NoteDragMode["ResizeE"] = "resize-e";
     NoteDragMode["ResizeSE"] = "resize-se";
     NoteDragMode["ResizeS"] = "resize-s";
-    NoteDragMode["ResizeE"] = "resize-e";
+    NoteDragMode["ResizeSW"] = "resize-sw";
+    NoteDragMode["ResizeW"] = "resize-w";
+    NoteDragMode["ResizeNW"] = "resize-nw";
 })(NoteDragMode || (NoteDragMode = {}));
 const NOTE_MIN_WIDTH = 80;
 const NOTE_MIN_HEIGHT = 60;
@@ -1067,6 +1072,8 @@ class FcNoteDraggingService {
             resizeNote: null,
             startMouseX: 0,
             startMouseY: 0,
+            startX: 0,
+            startY: 0,
             startWidth: 0,
             startHeight: 0
         };
@@ -1093,7 +1100,7 @@ class FcNoteDraggingService {
         else if (rect.right - event.clientX < 40) {
             this.scrollParent.scrollLeft += 40 - (rect.right - event.clientX);
         }
-        // Compensate offsets so that notes stay under the cursor after scroll
+        // Compensate so that notes stay under the cursor after scroll
         const scrollDx = this.scrollParent.scrollLeft - oldScrollLeft;
         const scrollDy = this.scrollParent.scrollTop - oldScrollTop;
         if (scrollDx !== 0 || scrollDy !== 0) {
@@ -1104,6 +1111,11 @@ class FcNoteDraggingService {
             for (const offset of this.state.nodeOffsets) {
                 offset.x += scrollDx;
                 offset.y += scrollDy;
+            }
+            // For resize: adjust startMouse so that dx/dy account for the scroll shift
+            if (this.state.resizeNote) {
+                this.state.startMouseX -= scrollDx;
+                this.state.startMouseY -= scrollDy;
             }
         }
     }
@@ -1119,8 +1131,7 @@ class FcNoteDraggingService {
         }
     }
     isDraggingNote(note) {
-        return (this.state.mode === NoteDragMode.Move || this.state.mode === NoteDragMode.ResizeSE ||
-            this.state.mode === NoteDragMode.ResizeS || this.state.mode === NoteDragMode.ResizeE) &&
+        return this.state.mode !== NoteDragMode.None && this.state.mode !== NoteDragMode.Pending &&
             (this.state.notes.includes(note) || this.state.resizeNote === note);
     }
     startMove(event, note) {
@@ -1140,6 +1151,8 @@ class FcNoteDraggingService {
             resizeNote: null,
             startMouseX: event.clientX,
             startMouseY: event.clientY,
+            startX: 0,
+            startY: 0,
             startWidth: 0,
             startHeight: 0
         };
@@ -1204,6 +1217,8 @@ class FcNoteDraggingService {
             resizeNote: note,
             startMouseX: event.clientX,
             startMouseY: event.clientY,
+            startX: note.x,
+            startY: note.y,
             startWidth: note.width,
             startHeight: note.height
         };
@@ -1227,31 +1242,57 @@ class FcNoteDraggingService {
             const dx = event.clientX - this.state.startMouseX;
             const dy = event.clientY - this.state.startMouseY;
             if (this.state.mode === NoteDragMode.Move) {
+                // Find the max correction needed so no element goes below 0
+                let minX = 0;
+                let minY = 0;
+                for (const offset of this.state.offsets) {
+                    minX = Math.min(minX, offset.x + event.clientX);
+                    minY = Math.min(minY, offset.y + event.clientY);
+                }
+                for (const offset of this.state.nodeOffsets) {
+                    minX = Math.min(minX, offset.x + event.clientX);
+                    minY = Math.min(minY, offset.y + event.clientY);
+                }
+                const clampedClientX = event.clientX - minX;
+                const clampedClientY = event.clientY - minY;
                 for (let i = 0; i < this.state.notes.length; i++) {
                     const note = this.state.notes[i];
                     const offset = this.state.offsets[i];
-                    note.x = Math.round(Math.max(0, offset.x + event.clientX));
-                    note.y = Math.round(Math.max(0, offset.y + event.clientY));
+                    note.x = Math.round(offset.x + clampedClientX);
+                    note.y = Math.round(offset.y + clampedClientY);
                     this.resizeCanvas(note);
                 }
                 for (let i = 0; i < this.state.nodes.length; i++) {
                     const node = this.state.nodes[i];
                     const offset = this.state.nodeOffsets[i];
-                    node.x = Math.round(Math.max(0, offset.x + event.clientX));
-                    node.y = Math.round(Math.max(0, offset.y + event.clientY));
+                    node.x = Math.round(offset.x + clampedClientX);
+                    node.y = Math.round(offset.y + clampedClientY);
                 }
             }
             else if (this.state.resizeNote) {
                 const note = this.state.resizeNote;
-                if (this.state.mode === NoteDragMode.ResizeSE) {
+                const mode = this.state.mode;
+                // Horizontal component
+                const resizesE = mode === NoteDragMode.ResizeE || mode === NoteDragMode.ResizeSE || mode === NoteDragMode.ResizeNE;
+                const resizesW = mode === NoteDragMode.ResizeW || mode === NoteDragMode.ResizeSW || mode === NoteDragMode.ResizeNW;
+                // Vertical component
+                const resizesS = mode === NoteDragMode.ResizeS || mode === NoteDragMode.ResizeSE || mode === NoteDragMode.ResizeSW;
+                const resizesN = mode === NoteDragMode.ResizeN || mode === NoteDragMode.ResizeNE || mode === NoteDragMode.ResizeNW;
+                if (resizesE) {
                     note.width = Math.max(NOTE_MIN_WIDTH, Math.round(this.state.startWidth + dx));
+                }
+                if (resizesW) {
+                    const rightEdge = this.state.startX + this.state.startWidth;
+                    note.x = Math.max(0, Math.round(Math.min(rightEdge - NOTE_MIN_WIDTH, this.state.startX + dx)));
+                    note.width = rightEdge - note.x;
+                }
+                if (resizesS) {
                     note.height = Math.max(NOTE_MIN_HEIGHT, Math.round(this.state.startHeight + dy));
                 }
-                else if (this.state.mode === NoteDragMode.ResizeS) {
-                    note.height = Math.max(NOTE_MIN_HEIGHT, Math.round(this.state.startHeight + dy));
-                }
-                else if (this.state.mode === NoteDragMode.ResizeE) {
-                    note.width = Math.max(NOTE_MIN_WIDTH, Math.round(this.state.startWidth + dx));
+                if (resizesN) {
+                    const bottomEdge = this.state.startY + this.state.startHeight;
+                    note.y = Math.max(0, Math.round(Math.min(bottomEdge - NOTE_MIN_HEIGHT, this.state.startY + dy)));
+                    note.height = bottomEdge - note.y;
                 }
                 this.resizeCanvas(note);
             }
@@ -1945,6 +1986,9 @@ class FcNoteContainerComponent {
     }
     mousedown(event) {
         if (!this.note.readonly && this.modelservice.isEditable()) {
+            if (event.target.closest('.fc-note-resize-handle')) {
+                return;
+            }
             event.stopPropagation();
             this.noteDraggingService.startMove(event, this.note);
         }
@@ -1975,11 +2019,11 @@ class FcNoteContainerComponent {
         return NoteDragMode;
     }
     static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNoteContainerComponent, deps: [{ token: FC_NOTE_COMPONENT_CONFIG }, { token: i0.ElementRef }], target: i0.ɵɵFactoryTarget.Component }); }
-    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "14.0.0", version: "20.3.16", type: FcNoteContainerComponent, isStandalone: false, selector: "fc-note", inputs: { note: "note", modelservice: "modelservice", noteDraggingService: "noteDraggingService", userNoteCallbacks: "userNoteCallbacks", selected: "selected", edit: "edit", dragging: "dragging" }, host: { listeners: { "mousedown": "mousedown($event)", "click": "click($event)", "mouseenter": "mouseenter($event)", "mouseleave": "mouseleave($event)" }, properties: { "attr.id": "this.noteId", "style.top": "this.top", "style.left": "this.left", "style.width": "this.width", "style.height": "this.height" } }, viewQueries: [{ propertyName: "noteContentContainer", first: true, predicate: ["noteContent"], descendants: true, read: ViewContainerRef, static: true }], usesOnChanges: true, ngImport: i0, template: "<ng-template #noteContent></ng-template>\n<div class=\"fc-note-resize-handle fc-note-resize-s\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeS)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-e\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-se\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeSE)\">\n</div>\n", styles: [":host{position:absolute;z-index:0;box-sizing:border-box;display:block;cursor:move;-webkit-user-select:none;user-select:none}:host.fc-dragging{opacity:.85}:host.fc-selected{box-shadow:0 0 0 3px #00000059}.fc-note-resize-handle{position:absolute;z-index:10}.fc-note-resize-se{bottom:0;right:0;width:14px;height:14px;cursor:se-resize}.fc-note-resize-s{bottom:0;left:50%;transform:translate(-50%);width:40px;height:8px;cursor:s-resize}.fc-note-resize-e{right:0;top:50%;transform:translateY(-50%);width:8px;height:40px;cursor:e-resize}\n"] }); }
+    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "14.0.0", version: "20.3.16", type: FcNoteContainerComponent, isStandalone: false, selector: "fc-note", inputs: { note: "note", modelservice: "modelservice", noteDraggingService: "noteDraggingService", userNoteCallbacks: "userNoteCallbacks", selected: "selected", edit: "edit", dragging: "dragging" }, host: { listeners: { "mousedown": "mousedown($event)", "click": "click($event)", "mouseenter": "mouseenter($event)", "mouseleave": "mouseleave($event)" }, properties: { "attr.id": "this.noteId", "style.top": "this.top", "style.left": "this.left", "style.width": "this.width", "style.height": "this.height" } }, viewQueries: [{ propertyName: "noteContentContainer", first: true, predicate: ["noteContent"], descendants: true, read: ViewContainerRef, static: true }], usesOnChanges: true, ngImport: i0, template: "<div class=\"fc-note-content-wrapper\">\n  <ng-template #noteContent></ng-template>\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-edge-h fc-note-resize-n\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeN)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-corner fc-note-resize-ne\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeNE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-edge-v fc-note-resize-e\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-corner fc-note-resize-se\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeSE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-edge-h fc-note-resize-s\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeS)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-corner fc-note-resize-sw\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeSW)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-edge-v fc-note-resize-w\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeW)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-corner fc-note-resize-nw\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeNW)\">\n</div>\n", styles: [":host{position:absolute;z-index:0;box-sizing:border-box;display:block;cursor:move;-webkit-user-select:none;user-select:none}:host.fc-dragging{opacity:.85}:host.fc-selected{box-shadow:0 0 0 3px #00000059}:host .fc-note-content-wrapper{position:relative;z-index:0;width:100%;height:100%}:host .fc-note-resize-handle{position:absolute;z-index:10}:host .fc-note-resize-corner{width:14px;height:14px}:host .fc-note-resize-edge-h{left:14px;right:14px;height:8px}:host .fc-note-resize-edge-v{top:14px;bottom:14px;width:8px}:host .fc-note-resize-nw{top:0;left:0;cursor:nw-resize}:host .fc-note-resize-ne{top:0;right:0;cursor:ne-resize}:host .fc-note-resize-se{bottom:0;right:0;cursor:se-resize}:host .fc-note-resize-sw{bottom:0;left:0;cursor:sw-resize}:host .fc-note-resize-n{top:0;cursor:n-resize}:host .fc-note-resize-s{bottom:0;cursor:s-resize}:host .fc-note-resize-e{right:0;cursor:e-resize}:host .fc-note-resize-w{left:0;cursor:w-resize}\n"] }); }
 }
 i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: FcNoteContainerComponent, decorators: [{
             type: Component,
-            args: [{ selector: 'fc-note', standalone: false, template: "<ng-template #noteContent></ng-template>\n<div class=\"fc-note-resize-handle fc-note-resize-s\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeS)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-e\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-se\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeSE)\">\n</div>\n", styles: [":host{position:absolute;z-index:0;box-sizing:border-box;display:block;cursor:move;-webkit-user-select:none;user-select:none}:host.fc-dragging{opacity:.85}:host.fc-selected{box-shadow:0 0 0 3px #00000059}.fc-note-resize-handle{position:absolute;z-index:10}.fc-note-resize-se{bottom:0;right:0;width:14px;height:14px;cursor:se-resize}.fc-note-resize-s{bottom:0;left:50%;transform:translate(-50%);width:40px;height:8px;cursor:s-resize}.fc-note-resize-e{right:0;top:50%;transform:translateY(-50%);width:8px;height:40px;cursor:e-resize}\n"] }]
+            args: [{ selector: 'fc-note', standalone: false, template: "<div class=\"fc-note-content-wrapper\">\n  <ng-template #noteContent></ng-template>\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-edge-h fc-note-resize-n\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeN)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-corner fc-note-resize-ne\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeNE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-edge-v fc-note-resize-e\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-corner fc-note-resize-se\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeSE)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-edge-h fc-note-resize-s\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeS)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-corner fc-note-resize-sw\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeSW)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-edge-v fc-note-resize-w\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeW)\">\n</div>\n<div class=\"fc-note-resize-handle fc-note-resize-corner fc-note-resize-nw\"\n     (mousedown)=\"startResize($event, noteDragMode.ResizeNW)\">\n</div>\n", styles: [":host{position:absolute;z-index:0;box-sizing:border-box;display:block;cursor:move;-webkit-user-select:none;user-select:none}:host.fc-dragging{opacity:.85}:host.fc-selected{box-shadow:0 0 0 3px #00000059}:host .fc-note-content-wrapper{position:relative;z-index:0;width:100%;height:100%}:host .fc-note-resize-handle{position:absolute;z-index:10}:host .fc-note-resize-corner{width:14px;height:14px}:host .fc-note-resize-edge-h{left:14px;right:14px;height:8px}:host .fc-note-resize-edge-v{top:14px;bottom:14px;width:8px}:host .fc-note-resize-nw{top:0;left:0;cursor:nw-resize}:host .fc-note-resize-ne{top:0;right:0;cursor:ne-resize}:host .fc-note-resize-se{bottom:0;right:0;cursor:se-resize}:host .fc-note-resize-sw{bottom:0;left:0;cursor:sw-resize}:host .fc-note-resize-n{top:0;cursor:n-resize}:host .fc-note-resize-s{bottom:0;cursor:s-resize}:host .fc-note-resize-e{right:0;cursor:e-resize}:host .fc-note-resize-w{left:0;cursor:w-resize}\n"] }]
         }], ctorParameters: () => [{ type: undefined, decorators: [{
                     type: Inject,
                     args: [FC_NOTE_COMPONENT_CONFIG]
@@ -2490,11 +2534,11 @@ class DefaultFcNoteComponent extends FcNoteComponent {
         this.modelservice.notes.delete(this.note);
     }
     static { this.ɵfac = i0.ɵɵngDeclareFactory({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: DefaultFcNoteComponent, deps: [], target: i0.ɵɵFactoryTarget.Component }); }
-    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "17.0.0", version: "20.3.16", type: DefaultFcNoteComponent, isStandalone: false, selector: "fc-default-note", usesInheritance: true, ngImport: i0, template: "@if (modelservice.isEditable() && !note.readonly && edit) {\n  <div class=\"fc-noselect fc-nodeedit\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteEdit($event)\">\n    <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n  </div>\n  <div class=\"fc-noselect fc-nodedelete\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteDelete($event)\">\n    &times;\n  </div>\n}\n<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note.content || '' }}</div>\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}.fc-nodeedit,.fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer;z-index:10}.fc-nodeedit{top:-24px;right:16px;font-size:15px}.fc-nodedelete{top:-24px;right:-13px;font-size:18px}.fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}.fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}\n"] }); }
+    static { this.ɵcmp = i0.ɵɵngDeclareComponent({ minVersion: "17.0.0", version: "20.3.16", type: DefaultFcNoteComponent, isStandalone: false, selector: "fc-default-note", usesInheritance: true, ngImport: i0, template: "@if (modelservice.isEditable() && !note.readonly && edit) {\n  <div class=\"fc-noselect fc-nodeedit\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteEdit($event)\">\n    <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n  </div>\n  <div class=\"fc-noselect fc-nodedelete\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteDelete($event)\">\n    &times;\n  </div>\n}\n<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note.content || '' }}</div>\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}:host .fc-nodeedit,:host .fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer;z-index:10}:host .fc-nodeedit{top:-24px;right:16px;font-size:15px}:host .fc-nodedelete{top:-24px;right:-13px;font-size:18px}:host .fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}:host .fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}\n"] }); }
 }
 i0.ɵɵngDeclareClassMetadata({ minVersion: "12.0.0", version: "20.3.16", ngImport: i0, type: DefaultFcNoteComponent, decorators: [{
             type: Component,
-            args: [{ selector: 'fc-default-note', standalone: false, template: "@if (modelservice.isEditable() && !note.readonly && edit) {\n  <div class=\"fc-noselect fc-nodeedit\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteEdit($event)\">\n    <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n  </div>\n  <div class=\"fc-noselect fc-nodedelete\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteDelete($event)\">\n    &times;\n  </div>\n}\n<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note.content || '' }}</div>\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}.fc-nodeedit,.fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer;z-index:10}.fc-nodeedit{top:-24px;right:16px;font-size:15px}.fc-nodedelete{top:-24px;right:-13px;font-size:18px}.fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}.fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}\n"] }]
+            args: [{ selector: 'fc-default-note', standalone: false, template: "@if (modelservice.isEditable() && !note.readonly && edit) {\n  <div class=\"fc-noselect fc-nodeedit\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteEdit($event)\">\n    <i class=\"fa fa-pencil\" aria-hidden=\"true\"></i>\n  </div>\n  <div class=\"fc-noselect fc-nodedelete\"\n       (mousedown)=\"$event.stopPropagation()\"\n       (click)=\"noteDelete($event)\">\n    &times;\n  </div>\n}\n<div class=\"fc-default-note-content\"\n     (dblclick)=\"userNoteCallbacks.doubleClick($event, note)\">\n  <div class=\"fc-default-note-text\">{{ note.content || '' }}</div>\n</div>\n", styles: [":host{display:block;width:100%;height:100%;box-sizing:border-box}:host .fc-nodeedit,:host .fc-nodedelete{display:block;position:absolute;border:solid 2px #eee;border-radius:50%;font-weight:600;line-height:20px;height:20px;padding-top:2px;width:22px;background:#494949;color:#fff;text-align:center;vertical-align:bottom;cursor:pointer;z-index:10}:host .fc-nodeedit{top:-24px;right:16px;font-size:15px}:host .fc-nodedelete{top:-24px;right:-13px;font-size:18px}:host .fc-default-note-content{position:relative;width:100%;height:100%;background-color:#fff9c4;border:1px solid #E6D600;border-radius:4px;box-sizing:border-box;padding:8px;overflow:auto}:host .fc-default-note-content .fc-default-note-text{white-space:pre-wrap;word-break:break-word;font-size:13px;color:#333;min-height:100%}\n"] }]
         }], ctorParameters: () => [] });
 
 class NgxFlowchartModule {
