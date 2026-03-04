@@ -1,0 +1,89 @@
+:host {
+  position: absolute;
+  z-index: 0;
+  box-sizing: border-box;
+  display: block;
+  cursor: move;
+  user-select: none;
+
+  &.fc-dragging {
+    opacity: 0.85;
+  }
+
+  &.fc-selected {
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.35);
+  }
+
+  .fc-note-content-wrapper {
+    position: relative;
+    z-index: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .fc-note-resize-handle {
+    position: absolute;
+    z-index: 10;
+  }
+
+  .fc-note-resize-corner {
+    width: 14px;
+    height: 14px;
+  }
+
+  .fc-note-resize-edge-h {
+    left: 14px;
+    right: 14px;
+    height: 8px;
+  }
+
+  .fc-note-resize-edge-v {
+    top: 14px;
+    bottom: 14px;
+    width: 8px;
+  }
+
+  .fc-note-resize-nw {
+    top: 0;
+    left: 0;
+    cursor: nw-resize;
+  }
+
+  .fc-note-resize-ne {
+    top: 0;
+    right: 0;
+    cursor: ne-resize;
+  }
+
+  .fc-note-resize-se {
+    bottom: 0;
+    right: 0;
+    cursor: se-resize;
+  }
+
+  .fc-note-resize-sw {
+    bottom: 0;
+    left: 0;
+    cursor: sw-resize;
+  }
+
+  .fc-note-resize-n {
+    top: 0;
+    cursor: n-resize;
+  }
+
+  .fc-note-resize-s {
+    bottom: 0;
+    cursor: s-resize;
+  }
+
+  .fc-note-resize-e {
+    right: 0;
+    cursor: e-resize;
+  }
+
+  .fc-note-resize-w {
+    left: 0;
+    cursor: w-resize;
+  }
+}

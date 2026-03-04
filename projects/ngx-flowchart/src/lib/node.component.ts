@@ -1,7 +1,6 @@
 import {
   AfterViewInit,
   Component,
-  ComponentFactoryResolver,
   Directive,
   ElementRef,
   HostBinding,
@@ -81,8 +80,7 @@ export class FcNodeContainerComponent implements OnInit, AfterViewInit, OnChange
   @ViewChild('nodeContent', {read: ViewContainerRef, static: true}) nodeContentContainer: ViewContainerRef;
 
   constructor(@Inject(FC_NODE_COMPONENT_CONFIG) private nodeComponentConfig: FcNodeComponentConfig,
-              private elementRef: ElementRef<HTMLElement>,
-              private componentFactoryResolver: ComponentFactoryResolver) {
+              private elementRef: ElementRef<HTMLElement>) {
   }
 
   ngOnInit(): void {
@@ -103,8 +101,9 @@ export class FcNodeContainerComponent implements OnInit, AfterViewInit, OnChange
     this.updateNodeClass();
     this.modelservice.nodes.setHtmlElement(this.node.id, element[0]);
     this.nodeContentContainer.clear();
-    const componentFactory = this.componentFactoryResolver.resolveComponentFactory(this.nodeComponentConfig.nodeComponentType);
-    const componentRef = this.nodeContentContainer.createComponent(componentFactory);
+    const componentRef = this.nodeContentContainer.createComponent(
+      this.nodeComponentConfig.nodeComponentType
+    );
     this.nodeComponent = componentRef.instance;
     this.nodeComponent.callbacks = this.callbacks;
     this.nodeComponent.userNodeCallbacks = this.userNodeCallbacks;

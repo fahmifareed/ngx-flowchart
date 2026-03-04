@@ -1,11 +1,18 @@
 import { Observable } from 'rxjs';
 import { InjectionToken, Type } from '@angular/core';
 import { FcNodeComponent } from './node.component';
+import { FcNoteComponent } from './note.component';
 
 export const FC_NODE_COMPONENT_CONFIG = new InjectionToken<FcNodeComponentConfig>('fc-node.component.config');
 
 export interface FcNodeComponentConfig {
   nodeComponentType: Type<FcNodeComponent>;
+}
+
+export const FC_NOTE_COMPONENT_CONFIG = new InjectionToken<FcNoteComponentConfig>('fc-note.component.config');
+
+export interface FcNoteComponentConfig {
+  noteComponentType: Type<FcNoteComponent>;
 }
 
 const htmlPrefix = 'fc';
@@ -34,8 +41,9 @@ export const FlowchartConstants = {
   nodeOverlayClass: htmlPrefix + '-node-overlay',
   leftConnectorClass: htmlPrefix + '-' + leftConnectorType + 's',
   rightConnectorClass: htmlPrefix + '-' + rightConnectorType + 's',
-  canvasResizeThreshold: 200,
-  canvasResizeStep: 200
+  canvasResizeThreshold: 100,
+  canvasResizeStep: 100,
+  noteClass: htmlPrefix + '-note'
 };
 
 
@@ -49,6 +57,15 @@ export interface FcRectBox {
   left: number;
   right: number;
   bottom: number;
+}
+
+export interface FcNote extends FcCoords {
+  id: string;
+  width: number;
+  height: number;
+  readonly?: boolean;
+  content?: string;
+  [key: string]: any;
 }
 
 export interface FcConnector {
@@ -90,11 +107,20 @@ export interface FcEdge {
 export interface FcItemInfo {
   node?: FcNode;
   edge?: FcEdge;
+  note?: FcNote;
 }
 
 export interface FcModel {
   nodes: Array<FcNode>;
   edges: Array<FcEdge>;
+  notes?: Array<FcNote>;
+}
+
+export interface UserNoteCallbacks {
+  noteEdit?: (event: MouseEvent, note: FcNote) => void;
+  doubleClick?: (event: MouseEvent, note: FcNote) => void;
+  mouseEnter?: (event: MouseEvent, note: FcNote) => void;
+  mouseLeave?: (event: MouseEvent, note: FcNote) => void;
 }
 
 export interface UserCallbacks {
@@ -103,11 +129,13 @@ export interface UserCallbacks {
   edgeAdded?: (edge: FcEdge) => void;
   nodeRemoved?: (node: FcNode) => void;
   edgeRemoved?: (edge: FcEdge) => void;
+  noteRemoved?: (note: FcNote) => void;
   edgeDoubleClick?: (event: MouseEvent, edge: FcEdge) => void;
   edgeMouseOver?: (event: MouseEvent, edge: FcEdge) => void;
   isValidEdge?: (source: FcConnector, destination: FcConnector) => boolean;
   edgeEdit?: (event: Event, edge: FcEdge) => void;
   nodeCallbacks?: UserNodeCallbacks;
+  noteCallbacks?: UserNoteCallbacks;
 }
 
 export interface UserNodeCallbacks {

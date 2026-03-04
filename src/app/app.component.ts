@@ -1,5 +1,5 @@
 import { AfterViewInit, Component, HostBinding, HostListener, ViewChild } from '@angular/core';
-import { FcModel, FcNode, FlowchartConstants, NgxFlowchartComponent, UserCallbacks } from 'ngx-flowchart-dev';
+import { FcModel, FcNode, FcNote, FlowchartConstants, NgxFlowchartComponent, UserCallbacks } from 'ngx-flowchart-dev';
 import { of } from 'rxjs';
 import { DELETE } from '@angular/cdk/keycodes';
 
@@ -24,10 +24,12 @@ export class AppComponent implements AfterViewInit {
   flowchartselected = [];
   model: FcModel = {
     nodes: [],
-    edges: []
+    edges: [],
+    notes: []
   };
   nextNodeID = 10;
   nextConnectorID = 20;
+  nextNoteID = 1;
 
   callbacks: UserCallbacks = {
     edgeDoubleClick: (_event, _edge) => {
@@ -81,6 +83,9 @@ export class AppComponent implements AfterViewInit {
       console.log('edge removed');
       console.log(edge);
     },
+    noteRemoved: note => {
+      console.log('note removed', note);
+    },
     nodeCallbacks: {
       doubleClick: _event => {
         console.log('Node was doubleclicked.');
@@ -89,6 +94,20 @@ export class AppComponent implements AfterViewInit {
         const name = prompt('Enter a node name:', node.name);
         if (name) {
           node.name = name;
+        }
+      }
+    },
+    noteCallbacks: {
+      doubleClick: (_event, note) => {
+        const content = prompt('Edit note:', note['content'] || '');
+        if (content !== null) {
+          note['content'] = content;
+        }
+      },
+      noteEdit: (_event, note) => {
+        const content = prompt('Edit note:', note['content'] || '');
+        if (content !== null) {
+          note['content'] = content;
         }
       }
     }
@@ -219,6 +238,27 @@ export class AppComponent implements AfterViewInit {
         }
       ]
     );
+    this.model.notes.push(...
+      [
+        {
+          id: 'note-1',
+          x: 250,
+          y: 50,
+          width: 200,
+          height: 125,
+          content: 'Sticky note behind nodes.\nDrag me, resize me!'
+        },
+        {
+          id: 'note-2',
+          x: 950,
+          y: 50,
+          width: 600,
+          height: 150,
+          content: 'Double-click to edit.\nDelete key removes selected.'
+        }
+      ]
+    );
+    this.nextNoteID = 3;
   }
 
   @HostListener('keydown.control.a', ['$event'])
@@ -236,6 +276,22 @@ export class AppComponent implements AfterViewInit {
     if (event.keyCode === DELETE) {
       this.fcCanvas.modelService.deleteSelected();
     }
+  }
+
+  public addNote() {
+    const content = prompt('Enter a note:', 'New note');
+    if (!content) {
+      return;
+    }
+    const note: FcNote = {
+      id: 'note-' + (this.nextNoteID++),
+      x: 200,
+      y: 300,
+      width: 200,
+      height: 120,
+      content
+    };
+    this.model.notes.push(note);
   }
 
   public addNewNode() {

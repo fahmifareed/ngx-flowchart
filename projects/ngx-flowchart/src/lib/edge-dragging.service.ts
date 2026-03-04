@@ -75,8 +75,9 @@ export class FcEdgeDraggingService {
     if (!canvas) {
       throw new Error('No canvas while edgedraggingService found.');
     }
-    this.dragOffset.x = -canvas.getBoundingClientRect().left;
-    this.dragOffset.y = -canvas.getBoundingClientRect().top;
+    const canvasBox = canvas.getBoundingClientRect();
+    this.dragOffset.x = -canvasBox.left;
+    this.dragOffset.y = -canvasBox.top;
 
     this.edgeDragging.dragPoint2 = {
       x: event.clientX + this.dragOffset.x,

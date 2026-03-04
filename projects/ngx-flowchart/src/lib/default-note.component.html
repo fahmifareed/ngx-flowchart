@@ -1,0 +1,16 @@
+@if (modelservice.isEditable() && !note.readonly && edit) {
+  <div class="fc-noselect fc-nodeedit"
+       (mousedown)="$event.stopPropagation()"
+       (click)="noteEdit($event)">
+    <i class="fa fa-pencil" aria-hidden="true"></i>
+  </div>
+  <div class="fc-noselect fc-nodedelete"
+       (mousedown)="$event.stopPropagation()"
+       (click)="noteDelete($event)">
+    &times;
+  </div>
+}
+<div class="fc-default-note-content"
+     (dblclick)="userNoteCallbacks?.doubleClick?.($event, note)">
+  <div class="fc-default-note-text">{{ note.content || '' }}</div>
+</div>

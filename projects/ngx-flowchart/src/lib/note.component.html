@@ -1,0 +1,27 @@
+<div class="fc-note-content-wrapper">
+  <ng-template #noteContent></ng-template>
+</div>
+<div class="fc-note-resize-handle fc-note-resize-edge-h fc-note-resize-n"
+     (mousedown)="startResize($event, noteDragMode.ResizeN)">
+</div>
+<div class="fc-note-resize-handle fc-note-resize-corner fc-note-resize-ne"
+     (mousedown)="startResize($event, noteDragMode.ResizeNE)">
+</div>
+<div class="fc-note-resize-handle fc-note-resize-edge-v fc-note-resize-e"
+     (mousedown)="startResize($event, noteDragMode.ResizeE)">
+</div>
+<div class="fc-note-resize-handle fc-note-resize-corner fc-note-resize-se"
+     (mousedown)="startResize($event, noteDragMode.ResizeSE)">
+</div>
+<div class="fc-note-resize-handle fc-note-resize-edge-h fc-note-resize-s"
+     (mousedown)="startResize($event, noteDragMode.ResizeS)">
+</div>
+<div class="fc-note-resize-handle fc-note-resize-corner fc-note-resize-sw"
+     (mousedown)="startResize($event, noteDragMode.ResizeSW)">
+</div>
+<div class="fc-note-resize-handle fc-note-resize-edge-v fc-note-resize-w"
+     (mousedown)="startResize($event, noteDragMode.ResizeW)">
+</div>
+<div class="fc-note-resize-handle fc-note-resize-corner fc-note-resize-nw"
+     (mousedown)="startResize($event, noteDragMode.ResizeNW)">
+</div>

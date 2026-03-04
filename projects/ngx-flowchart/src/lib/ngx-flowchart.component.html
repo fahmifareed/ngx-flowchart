@@ -1,4 +1,15 @@
 <div (click)="canvasClick($event)" class="fc-canvas-container">
+  @for (note of (model.notes || []); track note) {
+    <fc-note
+      [note]="note"
+      [selected]="modelService.notes.isSelected(note)"
+      [edit]="modelService.notes.isEdit(note)"
+      [dragging]="noteDraggingService.isDraggingNote(note)"
+      [modelservice]="modelService"
+      [noteDraggingService]="noteDraggingService"
+      [userNoteCallbacks]="userNoteCallbacks">
+    </fc-note>
+  }
   <svg class="fc-canvas-svg">
     <defs>
       <marker class="fc-arrow-marker" [id]="arrowDefId" markerWidth="5" markerHeight="5" viewBox="-6 -6 12 12" refX="10" refY="0" markerUnits="strokeWidth" orient="auto">
